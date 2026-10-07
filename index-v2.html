@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#10161f">
+  <title>幽影峡谷 · 裂隙巫妖 | 战斗与关卡策划 Demo</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="game-v2.css">
+</head>
+<body class="demo-v2">
+  <div id="boot-error" role="alert" hidden></div>
+  <script>
+    const showBootError = (message) => {
+      const box = document.getElementById('boot-error');
+      if (box) { box.textContent = `Demo 启动失败：${message}`; box.hidden = false; }
+    };
+    window.addEventListener('error', (event) => showBootError(event.message || '资源加载失败'));
+    window.addEventListener('unhandledrejection', (event) => showBootError(event.reason?.message || String(event.reason || '异步加载失败')));
+  </script>
+  <div id="local-open-help" class="local-open-help" hidden>
+    <section class="local-open-card">
+      <div class="seal">影</div>
+      <h2>再一步就能打开</h2>
+      <p>请先完整解压 Demo，然后回到文件夹双击 <b>启动Demo.bat</b>。它会启动本机服务并自动打开游戏。</p>
+      <p class="muted">请不要直接双击 index.html 或 index-v2.html；浏览器会拦截本地游戏素材。</p>
+    </section>
+  </div>
+  <main class="app">
+    <header class="masthead">
+      <div class="brand">
+        <div class="seal">影</div>
+        <div>
+          <div class="kicker">关卡策划 × 战斗策划 · 面试作品 Demo</div>
+          <h1>幽影峡谷 <span>·</span> 裂隙巫妖</h1>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="version">PHASER 4 <i>•</i> v2.0</span>
+        <button id="feedbackOpen" class="icon-button" type="button">✎ <span>试玩反馈</span></button>
+        <button id="soundBtn" class="icon-button" type="button" aria-label="切换声音">♫ <span>声音开启</span></button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <section class="play-column">
+        <div class="hud">
+          <div class="hud-stat life">
+            <span class="hud-label">生命</span>
+            <strong id="hpText">100 <small>/ 100</small></strong>
+            <div class="mini-meter"><i id="hpFill"></i></div>
+          </div>
+          <div class="hud-stat stamina">
+            <span class="hud-label">格挡耐力</span>
+            <strong id="staminaText">100 <small>/ 100</small></strong>
+            <div class="mini-meter"><i id="staminaFill"></i></div>
+          </div>
+          <div class="hud-stat resource">
+            <span class="hud-label" id="energyLabel">破阵能量</span>
+            <strong id="energyText">00 <small>/ 70</small></strong>
+            <div class="mini-meter"><i id="energyFill"></i></div>
+          </div>
+          <div class="hud-stat">
+            <span class="hud-label">连击</span>
+            <strong id="comboText">× 00</strong>
+          </div>
+          <div class="hud-stat right">
+            <span class="hud-label" id="phaseText">峡谷入口</span>
+            <strong id="timeText">00:00</strong>
+          </div>
+        </div>
+
+        <div class="stage-frame" id="stage-frame">
+          <canvas id="stage" width="960" height="540" aria-label="横版动作关卡、格挡与弹反Boss战"></canvas>
+          <div id="overlay" class="overlay">
+            <div class="overlay-card">
+              <div class="overlay-kicker">GHOST CANYON / COMBAT & LEVEL DESIGN</div>
+              <h2 id="overlayTitle">读招、应对，再抓住反击窗口</h2>
+              <p id="overlayText">通过热身与高压遭遇进入检查点，先击败幽影守卫精英，再决定是否挑战裂隙巫妖。用普攻、格挡、弹反与闪避应对敌人。</p>
+              <div class="overlay-meta"><span>✦ 幽影守卫精英战</span><span>✦ 裂隙巫妖首领战</span><span>✦ 格挡与弹反</span></div>
+              <div class="overlay-actions">
+                <button id="startBtn" class="primary" type="button">完整试炼 <b>→</b></button>
+                <button id="bossBtn" class="secondary" type="button">直达 Boss <b>↗</b></button>
+                <button id="debugBtn" class="secondary" type="button" title="选择关卡和受伤规则">策划模式 <b>⚙</b></button>
+              </div>
+              <div id="plannerPanel" class="planner-panel" hidden>
+                <label>测试关卡
+                  <select id="plannerStage">
+                    <option value="warmup">峡谷入口 · 热身教学</option>
+                    <option value="pressure">回音峡道 · 双威胁</option>
+                    <option value="rest">断桥检查点</option>
+                    <option value="elite">幽影守卫 · 精英战</option>
+                    <option value="rift-p1">裂隙巫妖 · P1</option>
+                    <option value="rift-p2">裂隙巫妖 · P2</option>
+                    <option value="rift-p3">裂隙巫妖 · P3</option>
+                    <option value="rift-p4">裂隙巫妖 · P4</option>
+                  </select>
+                </label>
+                <label class="planner-damage"><input id="plannerDamage" type="checkbox" checked> 玩家会受到伤害</label>
+                <div class="planner-actions">
+                  <button id="plannerStart" class="primary" type="button">开始测试</button>
+                  <button id="plannerCancel" class="secondary" type="button">取消</button>
+                </div>
+              </div>
+              <div id="resultSummary" class="result-summary" hidden></div>
+            </div>
+          </div>
+          <div class="canvas-caption"><span><i></i> 玩法方向与迭代：本人 · 网页原型：AI 辅助实现</span><span>移动 A/D　J 普攻　F 格挡　E 弹反　Shift 闪避</span></div>
+        </div>
+
+        <div class="touch-controls" aria-label="触屏操作">
+          <div class="move-pad"><button data-action="left" type="button">←</button><button data-action="right" type="button">→</button></div>
+          <div class="action-pad">
+            <button data-action="jump" type="button">跳</button>
+            <button data-action="dodge" type="button">闪</button>
+            <button data-action="guard" class="guard-key" type="button">格挡</button>
+            <button data-action="attack" class="attack-key" type="button">斩</button>
+            <button data-action="parry" class="parry-key" type="button">弹反</button>
+            <button data-action="ultimate" class="ultimate-key" type="button">奥义</button>
+          </div>
+        </div>
+        <footer class="play-footer">
+          <span>关卡节奏　热身 → 双威胁 → 检查点 → 精英 → 最终 Boss</span>
+          <span>J 普攻　·　F 格挡　·　E 弹反　·　Shift 闪避　·　K/Z 奥义</span>
+        </footer>
+      </section>
+
+      <aside class="briefing">
+        <div class="brief-top"><span class="section-label">战斗简报 / ENCOUNTER BRIEF</span><span class="status-dot" id="statusDot"></span></div>
+        <h2 id="encounterName">幽影峡谷入口</h2>
+        <p class="brief-copy" id="encounterCopy">先用单一敌人教学，再逐步增加威胁类型，最后进入Boss测试。</p>
+
+        <div class="objective">
+          <span class="objective-mark">01</span>
+          <div><b>当前目标</b><p id="objectiveText">走近影卫，观察抬剑，再选择格挡或弹反。</p></div>
+        </div>
+
+        <div class="move-card">
+          <div class="move-head"><span class="section-label">Boss 招式识别</span><span id="moveTimer" class="move-timer">待命</span></div>
+          <div class="move-item" id="moveSlash"><span class="move-symbol low-symbol">◉</span><div><b>灵魂震爆</b><small>圆形法术范围；慢速范围大、快速范围小</small></div><span class="move-tag">慢/快</span></div>
+          <div class="move-item" id="moveShot"><span class="move-symbol drop-symbol">✧</span><div><b>追魂冥火</b><small>裂隙释放分层魂火；观察弹道高度</small></div><span class="move-tag">P1</span></div>
+          <div class="move-item" id="moveRush"><span class="move-symbol combo-symbol">⌾</span><div><b>幽魂换位</b><small>先标记传送落点，再发生圆形冲击</small><span class="move-tag p2">P2</span></div></div>
+          <div class="move-item" id="moveWave"><span class="move-symbol wave-symbol">⌘</span><div><b>亡魂印爆</b><small>锁定脚下位置后爆发；离开紫色符印</small><span class="move-tag p3">P3</span></div></div>
+        </div>
+
+        <div class="combat-loop"><span class="section-label">攻防循环</span><div class="loop"><span>读前摇</span><i>→</i><span>选防守</span><i>→</i><span>抓恢复输出</span></div></div>
+        <div class="live-note"><span class="note-icon">✦</span><p id="feedback">同一招式的预警、判定距离与危险区域使用同一套数据。</p></div>
+
+        <div class="brief-bottom"><div><span>当前阶段</span><b id="phaseLabel">热身教学</b></div><div><span>进度 / Boss 血量</span><b id="progressLabel">0%</b></div></div>
+        <div class="brief-bottom"><div><span>本局战斗记录</span><b id="combatStats">命中 0 · 格挡 0 · 弹反 0</b></div></div>
+
+        <div class="playtest-card">
+          <div><span class="section-label">试玩反馈 / LOCAL ONLY</span><b id="feedbackCount">本机已保存 0 份</b></div>
+          <p>挑战结束后填写易读性、难度和不公平点；问卷保存在本机，可导出 JSON。</p>
+          <div class="playtest-actions"><button id="feedbackOpen2" class="quiet" type="button">填写反馈</button><button id="exportFeedbackBtn" class="quiet" type="button">导出记录</button></div>
+        </div>
+
+        <div class="controls-row"><button id="pauseBtn" class="quiet" type="button">Ⅱ 暂停</button><button id="restartBtn" class="quiet" type="button">↻ 重开</button><span class="sound-note">Esc 暂停</span></div>
+      </aside>
+    </div>
+
+    <div class="design-strip">
+      <div><b>关卡节奏</b><span>单一威胁教学 · 双威胁压力 · 检查点 · 精英与首领</span></div>
+      <div><b>战斗系统</b><span>前摇 / 有效帧 / 恢复 · 格挡 / 弹反 / 闪避 / 奥义</span></div>
+      <div><b>体验复盘</b><span>命中 / 挥空 / 防守 / 受击来源 / 主观问卷</span></div>
+      <a href="战斗关卡评审与迭代方案_v2.md" target="_blank" rel="noopener">查看评审与设计方案 ↗</a>
+    </div>
+    <p class="credits">玩法方向与迭代：本人 · 网页原型：AI 辅助实现 · 参数尚待外部试玩校准 · <a href="README.md" target="_blank">项目说明</a> · <a href="素材来源.md" target="_blank">素材授权</a></p>
+  </main>
+
+  <div class="story-overlay" id="storyOverlay" hidden>
+    <section class="story-card" role="dialog" aria-modal="true" aria-labelledby="storyTitle">
+      <div class="story-kicker">CHAPTER 04 · THE HAND BEHIND THE VEIL</div>
+      <h2 id="storyTitle">裂隙彼端，有人在等你</h2>
+      <div id="storyNarrative" class="story-narrative">
+        <p>幽影守卫倒下，盔甲里却没有血。裂纹中涌出的黑雾，正被远处的裂隙一缕缕吸走。</p>
+        <p>“我只是看门人……”守卫的声音从空盔里传来，“峡谷的战乱、这场试炼……都是那个人安排的。”</p>
+        <p>裂隙深处响起熟悉的低语：“让他们一路厮杀、变强，再亲自把他们带到我面前。”</p>
+        <p>你终于明白：操纵幽影守卫、引发峡谷异变的幕后黑手，正是裂隙巫妖。它一直在用这场试炼筛选挑战者。</p>
+        <div class="story-actions">
+          <button id="storyNext" class="primary" type="button">读完，做出选择 <b>→</b></button>
+          <button id="storySkip" class="secondary" type="button">跳过剧情 <b>Space</b></button>
+        </div>
+      </div>
+      <div id="storyChoice" class="story-choice" hidden>
+        <p>裂隙正在扩张。你要追进去，终结这一切吗？</p>
+        <div class="story-actions">
+          <button id="challengeRiftBtn" class="primary" type="button">继续挑战最终 Boss <b>⚔</b></button>
+          <button id="leaveRiftBtn" class="secondary" type="button">暂不挑战，回到峡谷 <b>↩</b></button>
+        </div>
+      </div>
+      <div class="story-hint">按 Space 跳过剧情并直接选择；跳过不会替你选择是否开战。</div>
+    </section>
+  </div>
+
+  <div class="feedback-modal" id="feedbackModal" hidden>
+    <div class="feedback-scrim" data-close-feedback></div>
+    <section class="feedback-panel" role="dialog" aria-modal="true" aria-labelledby="feedbackTitle">
+      <button class="modal-close" type="button" data-close-feedback aria-label="关闭">×</button>
+      <div class="overlay-kicker">PLAYTEST / LOCAL SAVE</div>
+      <h2 id="feedbackTitle">记录试玩反馈</h2>
+      <p class="modal-copy">反馈只保存在当前浏览器，不会上传。请按刚才这局的实际体验填写。</p>
+      <form id="feedbackForm">
+        <div class="form-grid">
+          <label>总体体验
+            <select name="rating" required><option value="">请选择</option><option value="1">1 · 不喜欢</option><option value="2">2 · 有明显问题</option><option value="3">3 · 一般</option><option value="4">4 · 不错</option><option value="5">5 · 很喜欢</option></select>
+          </label>
+          <label>招式预警是否看懂
+            <select name="readability" required><option value="">请选择</option><option value="1">1 · 基本看不懂</option><option value="2">2 · 看懂少部分</option><option value="3">3 · 一般</option><option value="4">4 · 大多看懂</option><option value="5">5 · 清楚易懂</option></select>
+          </label>
+          <label>整体难度
+            <select name="difficulty" required><option value="">请选择</option><option value="tooEasy">太容易</option><option value="good">合适</option><option value="tooHard">太难</option></select>
+          </label>
+          <label>最有用的应对
+            <select name="favoriteDefense"><option value="">请选择</option><option value="guard">格挡</option><option value="parry">弹反</option><option value="dodge">闪避/跳跃</option><option value="attack">攻击压制</option></select>
+          </label>
+        </div>
+        <label class="comment-field">最不公平或最想改的一处
+          <textarea name="comment" rows="4" maxlength="600" placeholder="例如：P2突进前摇太短；地面安全区颜色不明显；格挡反馈不够……"></textarea>
+        </label>
+        <div class="form-footer"><span id="feedbackError" role="status"></span><button class="primary" type="submit">保存本机反馈 <b>✓</b></button></div>
+      </form>
+    </section>
+  </div>
+
+  <audio id="bgm" src="assets/project-utopia.ogg" loop preload="auto"></audio>
+  <script src="assets/phaser.min.js"></script>
+  <script src="feedback-v2.js"></script>
+  <script src="game-v2.js"></script>
+  <script>if (location.protocol === 'file:') document.getElementById('local-open-help').hidden = false;</script>
+</body>
+</html>
