@@ -9,37 +9,59 @@
   // P5「亡者归来」：血条自燃烧尽的秒数。到 P5 时血量从这个时间全额往下掉，
   // 玩家输出可以把血条压得更低，因此「撑到烧完」与「直接打死」都算通关。
   const PHASE5_BURN_SECONDS = 35;
+  // 烈焰残渣：技能落点留下的燃烧地面，是 P5 压迫感的主来源
+  const EMBER_LIFE = 7.0;
+  const EMBER_RADIUS = 78;
 
-  // 对话剧本。who=说话人，color=名牌配色，text=内容。
+  // 对话剧本。
+  // 背景：幽影峡谷本是关隘。三百年前关隘破了，守将没能合上裂隙，
+  // 自己也被裂隙吞了进去——从此留在里面，成了"守门的"。下去的骑士有十九个，
+  // 一个都没回来。玩家是第二十个。
+  // 基调：巫妖不是卡通反派，他疲惫、记得每一个死者的名字；
+  //       他最后要拉玩家一起走，不是因为恨，是因为这里太安静了。
   const STORY = {
     intro: [
-      { who: '旁白', color: 0x8fa8c8, text: '裂隙在峡谷深处张开了。它已经开了三天。' },
-      { who: '骑士', color: 0xcfe0ff, text: '……又是这里。这次的守卫，比上次多。' },
-      { who: '旁白', color: 0x8fa8c8, text: '往里走。你会先遇到守卫，然后是守卫背后的那个东西。' },
+      { who: '旁白', color: 0x8fa8c8, text: '此地名幽影。三百年前它是一道关隘。关隘破了，就再没合上。' },
+      { who: '旁白', color: 0x8fa8c8, text: '每年都有人下去。上头管这叫"试炼"——叫"坟场"就没人肯来了。' },
+      { who: '骑士', color: 0xcfe0ff, text: '……我数过。下去过十九个。' },
+      { who: '骑士', color: 0xcfe0ff, text: '我是第二十个。' },
     ],
     eliteDown: [
-      { who: '幽影守卫', color: 0xb98cff, text: '（单膝跪地）……大人，他来了。' },
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '（从裂隙里传出）做得不错，小骑士。' },
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '可惜你走进的是我的峡谷。' },
+      { who: '幽影守卫', color: 0xb98cff, text: '（甲胄里没有身体，只有风穿过）……口令。' },
+      { who: '幽影守卫', color: 0xb98cff, text: '……口令不对。三百年了。没人记得口令。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（声音像是从很深的水底传来）让他进来。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '他都走到这儿了。别浪费。' },
+      { who: '骑士', color: 0xcfe0ff, text: '你认识我？' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '我认识每一个。我记得他们所有的名字。' },
     ],
     revive: [
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '（骨架散落一地）……咳。' },
-      { who: '骑士', color: 0xcfe0ff, text: '结束了。' },
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '结束？' },
-      { who: '裂隙巫妖', color: 0xff6a3a, text: '有些东西，死了才会真正开始。' },
+      { who: '骑士', color: 0xcfe0ff, text: '结束了。你输了。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（骨架散落一地，声音反而更清楚了）输？孩子。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '我不是在跟你打。我是在等第十九个。' },
+      { who: '骑士', color: 0xcfe0ff, text: '……什么意思。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '你数过十九个。那是我数的。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '你身上这甲，是第七个的。左边护肩内侧有刻痕，是他妹妹的名字。' },
+      { who: '裂隙巫妖', color: 0xff6a3a, text: '我烧掉它的时候，他一直在喊那个名字。' },
+      { who: '裂隙巫妖', color: 0xff6a3a, text: '所以别说"结束"。我们才刚开始。' },
     ],
     burnout: [
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '（火焰将尽）……不。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（火焰在吞噬它自己）……终于。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '三百年了，终于有人把我打到这一步。' },
+      { who: '骑士', color: 0xcfe0ff, text: '放开吧。你已经不用守了。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '你知道这里最糟的是什么吗？' },
+      { who: '裂隙巫妖', color: 0xff6a3a, text: '是安静。这里太安静了。' },
       { who: '裂隙巫妖', color: 0xff6a3a, text: '我不会一个人走。' },
-      { who: '旁白', color: 0x8fa8c8, text: '余烬里浮出一颗烧红的核——它开始瞄准你。' },
     ],
     survived: [
-      { who: '骑士', color: 0xcfe0ff, text: '（拍掉肩上的灰）……躲开了。' },
-      { who: '旁白', color: 0x8fa8c8, text: '裂隙合上了。这一次，是真的。' },
+      { who: '骑士', color: 0xcfe0ff, text: '（大口喘气，撑着剑站起来）' },
+      { who: '骑士', color: 0xcfe0ff, text: '你的名字。你还没说你的名字。' },
+      { who: '旁白', color: 0x8fa8c8, text: '裂隙合上了。没有人回答。' },
+      { who: '旁白', color: 0x8fa8c8, text: '峡谷重新安静下来。这一次，是真的安静了。' },
     ],
     tookIt: [
-      { who: '裂隙巫妖', color: 0xff3a12, text: '（最后一丝声音）……抓到你了。' },
-      { who: '旁白', color: 0x8fa8c8, text: '峡谷里只剩下一地灰。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（最后一丝声音，几乎是温柔的）……抓到你了。' },
+      { who: '旁白', color: 0x8fa8c8, text: '第二十个，和第二十一个。' },
+      { who: '旁白', color: 0x8fa8c8, text: '峡谷里终于不那么安静了。' },
     ],
   };
   const ULTIMATE_REQUIRED = 70;
@@ -98,14 +120,18 @@
     3: [['wave', 'shot', 'rush', 'slash', 'wave', 'rush'], ['rush', 'wave', 'slash', 'shot', 'rush', 'wave']],
     4: [['rush', 'wave', 'slash', 'shot', 'rush', 'wave'], ['wave', 'rush', 'shot', 'slash', 'wave', 'rush']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
-    5: [['slash', 'rush', 'shot', 'wave', 'shot', 'slash', 'rush'],
-        ['rush', 'wave', 'slash', 'shot', 'wave', 'rush', 'slash']],
+    5: [['slash', 'rush', 'shot', 'burn', 'wave', 'shot', 'pull', 'slash'],
+        ['rush', 'burn', 'shot', 'slash', 'pull', 'wave', 'shot', 'slash']],
   };
   const RIFT_MOVES = {
     slash: { ...BOSS_MOVES.slash, label: '靈魂震爆', tell: 1.45, active: 0.22, recover: 1.3, damage: 22, range: 205 },
     shot: { ...BOSS_MOVES.shot, label: '追魂冥火', tell: 1.08, recover: 1.1, damage: 12 },
     rush: { ...BOSS_MOVES.rush, label: '幽魂換位', tell: 1.22, active: 0.56, recover: 1.3, damage: 28, range: 96 },
     wave: { ...BOSS_MOVES.wave, label: '亡魂印爆', tell: 1.35, active: 0.34, recover: 1.25, damage: 24, range: 92 },
+    // ② 焚天：全屏只有一处安全口
+    burn: { ...BOSS_MOVES.wave, label: '焚天', tell: 1.9, active: 0.4, recover: 1.5, damage: 34, range: 96, guardable: false, parryable: false },
+    // ④ 裂隙牵引：把玩家往自己身上拽
+    pull: { ...BOSS_MOVES.wave, label: '裂隙牵引', tell: 1.3, active: 1.1, recover: 1.1, damage: 26, range: 0, guardable: false, parryable: false },
   };
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -194,6 +220,8 @@
       this.hudGraphics = this.add.graphics().setDepth(30);
       this.doorGraphics = this.add.graphics().setDepth(4);
       this.bossLabel = this.add.text(WIDTH / 2, 7, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '12px', color: '#f5dfcf', fontStyle: 'bold', letterSpacing: 2 }).setOrigin(0.5, 0).setDepth(31).setVisible(false);
+      // 架势标签：让玩家读得出「还差多少破架势」，而不是盯着一条没有刻度的细线
+      this.postureLabel = this.add.text(206, 61, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '10px', color: '#e0c187' }).setOrigin(0, 0).setDepth(31).setVisible(false);
       this.actionCaption = this.add.text(WIDTH / 2, 77, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '12px', color: '#f2d6a1', stroke: '#0b1119', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(31).setAlpha(0);
 
       this.playerState = { hp: 100, stamina: 100, energy: 0, invuln: 0, invulnSource: '', guardBreak: 0, guardRecover: 0, parryWindow: 0, parryCooldown: 0, parryPending: false, parryAnim: 0, dodgeTimer: 0, dodgeCooldown: 0, ultimateTimer: 0, hurtTimer: 0, attack: null, attackCooldown: 0, comboIndex: 0, comboGrace: 0, combo: 0, facing: 1, lastGuard: 0, groundHits: 0 };
@@ -223,14 +251,23 @@
           this.advanceDialogue();
           return;
         }
+        // 没有对话时，空格用来快进过场的等待拍
+        if (this.skipPendingBeat()) { event.preventDefault(); return; }
         if (this.status === 'story') {
           event.preventDefault();
           this.skipStory();
         }
       });
-      this.input.keyboard.on('keydown-ENTER', () => this.advanceDialogue());
-      this.input.keyboard.on('keydown-ESC', () => { if (this.dialogueActive) this.endDialogue(); });
-      this.input.on('pointerdown', () => { if (this.dialogueActive) this.advanceDialogue(); });
+      this.input.keyboard.on('keydown-ENTER', () => { if (this.dialogueActive) this.advanceDialogue(); else this.skipPendingBeat(); });
+      // Esc：有对话就整段跳过，没有就加速过场
+      this.input.keyboard.on('keydown-ESC', () => {
+        if (this.dialogueActive) this.skipAllDialogue();
+        else this.skipPendingBeat();
+      });
+      this.input.on('pointerdown', () => {
+        if (this.dialogueActive) this.advanceDialogue();
+        else this.skipPendingBeat();
+      });
       this.input.keyboard.addCapture([Phaser.Input.Keyboard.KeyCodes.SPACE, Phaser.Input.Keyboard.KeyCodes.UP, Phaser.Input.Keyboard.KeyCodes.LEFT, Phaser.Input.Keyboard.KeyCodes.RIGHT]);
 
       // 策划测试快捷键：1/2/3/4 切 Boss 阶段，Q 补满能量，H 回满血
@@ -423,11 +460,20 @@
       if (!g) return;
       g.clear();
       if (this.room === 'boss') return;
-      const open = this.entities.length === 0;
-      const color = open ? 0x89d6ab : 0x58646c;
+      // ⑤ 热身关的门被幽影封住：必须成功弹反一次才开。
+      // 只看文字提示是学不会弹反的，第一次遇到必然是乱按——必须强制练一次。
+      const sealed = this.room === 'warmup' && this.stats.parries < 1;
+      const open = this.entities.length === 0 && !sealed;
+      const color = open ? 0x89d6ab : sealed ? 0xc98aff : 0x58646c;
       g.fillStyle(0x101720, 0.95).fillRoundedRect(867, FLOOR - 116, 64, 116, 18);
-      g.lineStyle(2, color, open ? 0.88 : 0.5).strokeRoundedRect(867, FLOOR - 116, 64, 116, 18);
-      g.fillStyle(color, open ? 0.2 : 0.08).fillRoundedRect(875, FLOOR - 107, 48, 103, 15);
+      g.lineStyle(2, color, open ? 0.88 : sealed ? 0.85 : 0.5).strokeRoundedRect(867, FLOOR - 116, 64, 116, 18);
+      g.fillStyle(color, open ? 0.2 : sealed ? 0.16 : 0.08).fillRoundedRect(875, FLOOR - 107, 48, 103, 15);
+      if (sealed) {
+        // 封印：交叉的幽影锁链
+        g.lineStyle(3, 0xc98aff, 0.9).lineBetween(875, FLOOR - 104, 923, FLOOR - 12);
+        g.lineBetween(923, FLOOR - 104, 875, FLOOR - 12);
+        g.lineStyle(1, 0xead4ff, 0.8).strokeCircle(899, FLOOR - 58, 15);
+      }
       if (open) {
         g.fillStyle(0xe3c68c, 0.95).fillCircle(899, FLOOR - 57, 5);
         g.lineStyle(2, 0xc6e3c8, 0.45).lineBetween(899, FLOOR - 38, 899, FLOOR - 94);
@@ -491,11 +537,17 @@
 
     clearEncounterObjects() {
       for (const item of this.entities || []) item.sprite.destroy();
-      for (const shot of this.projectiles || []) shot.destroy();
+      // 弹幕是普通对象（不是 Sprite），必须走 clearProjectile 去销毁它挂着的
+      // core/fx/glow 三个精灵。原来这里直接调 shot.destroy()，
+      // 只要重开或换场景时有弹幕存活就会抛 TypeError 整个崩掉。
+      for (const shot of this.projectiles || []) this.clearProjectile(shot);
       this.entities = [];
       this.projectiles = [];
       this.telegraph && this.telegraph.clear();
       this.stopBossFlames();
+      this.embers = [];
+      if (this.emberGfx) this.emberGfx.clear();
+      if (this.pullGfx) this.pullGfx.clear();
     }
 
     enterRoom(index, first = false) {
@@ -812,11 +864,14 @@
       }
       this.updateProjectiles(dt);
       this.updateEffects(dt);
+      this.updateEmbers(dt);
+      this.drawEmbers();
       this.drawFinalBoss();
       this.updateTelegraph();
       this.drawPlayerDefense();
       this.drawBossBars();
       this.drawDoor();
+      this.drawVignette();
       this.updateUi();
     }
 
@@ -917,8 +972,16 @@
       if (p.ultimateTimer > 0) this.player.setTint(0xffd77a);
       else this.player.clearTint();
 
-      if (this.room !== 'boss' && this.player.x > 882 && this.entities.length === 0) {
+      // ⑤ 教学门：热身关必须先成功弹反一次，门才会开
+      const parryGate = this.room === 'warmup' && this.stats.parries < 1;
+      if (this.room !== 'boss' && this.player.x > 882 && this.entities.length === 0 && !parryGate) {
         this.enterRoom(this.roomIndex + 1);
+      } else if (parryGate && this.player.x > 830 && this.entities.length === 0) {
+        this.parryGateTimer = (this.parryGateTimer || 0) - dt;
+        if (this.parryGateTimer <= 0) {
+          this.parryGateTimer = 5;
+          this.setMessage('門被幽影封住了。按 E 精準彈反接下近衛的一次攻擊，封印才會碎。');
+        }
       }
       this.player.x = clamp(this.player.x, 52, 916);
     }
@@ -1253,12 +1316,15 @@
         // 没有它，P5 的最优解就是「站远处等 35 秒」，玩家没有任何决策；
         // 有了它，就必须「进→打一套→退」，把生存和输出真正绑在一起。
         const dist = Math.abs(this.player.x - this.bossSprite.x);
-        if (dist < 118 && this.playerState.hurtTimer <= 0 && this.playerState.invuln <= 0) {
+        // ⑤ 越近烧得越快：140px 边缘约 2 点/次，贴脸约 11 点/次，间隔也从 1.0s 缩到 0.38s
+        if (dist < 140 && this.playerState.hurtTimer <= 0 && this.playerState.invuln <= 0) {
+          const closeness = 1 - dist / 140;
           this.heatAccum = (this.heatAccum || 0) + dt;
-          if (this.heatAccum >= 0.9) {
+          if (this.heatAccum >= 1.0 - 0.62 * closeness) {
             this.heatAccum = 0;
-            this.floatText(this.player.x, this.player.y - 122, '灼傷', '#ff9a5c');
-            this.playerDamage('灼熱光環', 4);
+            const burnDmg = Math.max(2, Math.round(2 + 9 * closeness));
+            this.floatText(this.player.x, this.player.y - 122, `灼傷 ${burnDmg}`, '#ff9a5c');
+            this.playerDamage('灼熱光環', burnDmg);
           }
         } else {
           this.heatAccum = 0;
@@ -1279,6 +1345,26 @@
         }
       }
 
+      // ④ 裂隙牵引：直接剥夺玩家对站位的控制权，把他往灼热光环里拽。
+      // 这才是压迫感的核心——不是躲不掉，而是"站不住"。
+      if (b.mode === 'active' && b.move === 'pull' && b.encounter === 'rift') {
+        const dir = Math.sign(this.bossSprite.x - this.player.x) || -1;
+        const k = 1 - Math.max(0, b.timer) / Math.max(0.01, b.moveActive);
+        this.player.x = clamp(this.player.x + dir * (170 + 300 * k) * dt, 52, 916);
+        if (!this.pullGfx) this.pullGfx = this.add.graphics().setDepth(24);
+        const pg = this.pullGfx;
+        pg.clear();
+        for (let i = -1; i <= 1; i += 1) {
+          pg.lineStyle(3, 0xff4d14, 0.22 + Math.random() * 0.30);
+          pg.lineBetween(this.bossSprite.x, FLOOR - 206 + i * 40, this.player.x, this.player.y - 74 + i * 22);
+          pg.lineStyle(1, 0xffd27a, 0.30 + Math.random() * 0.35);
+          pg.lineBetween(this.bossSprite.x, FLOOR - 206 + i * 40, this.player.x, this.player.y - 74 + i * 22);
+        }
+        if (Math.random() < 0.35) this.spawnBurst(this.player.x, this.player.y - 70, 0xff6a2a, 2);
+      } else if (this.pullGfx) {
+        this.pullGfx.clear();
+      }
+
       if (b.mode === 'idle') {
         b.timer -= dt;
         if (b.timer <= 0) this.startBossMove();
@@ -1293,14 +1379,30 @@
           b.hitResolved = false;
           b.rushHit = false;
           if (b.move === 'slash' && b.encounter === 'elite') this.playBossAnimation('knight-slash3-swing');
+          if (b.move === 'burn' && b.encounter === 'rift') this.castSkyBurn();
+          if (b.move === 'pull' && b.encounter === 'rift') this.castRiftPull();
           if (b.move === 'shot') {
             const distanceToPlayer = Math.abs(this.player.x - this.bossSprite.x);
             const spawnOffset = Math.min(55, Math.max(0, distanceToPlayer - 12));
             const moveDef = this.bossMoves().shot;
             const originX = this.bossSprite.x + b.facing * spawnOffset;
             if (b.encounter === 'rift') {
-              const lanes = b.phase >= 3 ? [FLOOR - 72, FLOOR - 132, FLOOR - 192] : [FLOOR - 72, FLOOR - 146];
-              lanes.forEach((laneY, index) => this.spawnProjectile(originX, laneY, b.facing, 285 + index * 48, moveDef.damage, moveDef.label));
+              // ③ P5 魂火连射：5 条弹道、弹速 430（原来 3 条 / 285），并且打两轮
+              const rapid = b.phase === 5 && b.revived;
+              const lanes = rapid
+                ? [FLOOR - 64, FLOOR - 110, FLOOR - 156, FLOOR - 202, FLOOR - 244]
+                : b.phase >= 3 ? [FLOOR - 72, FLOOR - 132, FLOOR - 192] : [FLOOR - 72, FLOOR - 146];
+              const shotSpeed = rapid ? 430 : 285;
+              lanes.forEach((laneY, index) => this.spawnProjectile(originX, laneY, b.facing, shotSpeed + index * 26, moveDef.damage, moveDef.label));
+              if (rapid) {
+                // 第二轮错开高度，躲过第一轮不代表安全
+                this.time.delayedCall(250, () => {
+                  if (this.status !== 'run' || !this.boss.revived || this.boss.phase !== 5) return;
+                  lanes.forEach((laneY, index) => this.spawnProjectile(
+                    this.bossSprite.x + this.boss.facing * 56, laneY + 23, this.boss.facing,
+                    shotSpeed + index * 26, moveDef.damage, moveDef.label));
+                });
+              }
             } else {
               this.spawnProjectile(originX, FLOOR - 100, b.facing, 345, moveDef.damage, moveDef.label);
             }
@@ -1435,8 +1537,13 @@
       const pattern = patterns[cycle % patterns.length];
       let patternIndex = b.sequence % sequenceLength;
       if (pattern[patternIndex] === b.lastMove) patternIndex = (patternIndex + 1) % sequenceLength;
-      const move = pattern[patternIndex];
+      let move = pattern[patternIndex];
       b.sequence = cycle * sequenceLength + patternIndex + 1;
+      // ⑥ 连招：P3+ 时幽魂换位之后有 55% 概率直接接灵魂震爆，
+      // 而且前摇缩短 40%——四招独立循环太好读了，每招都能"躲完就喘"，没有压迫。
+      const combo = b.encounter === 'rift' && b.phase >= 3 && b.lastMove === 'rush'
+        && b.mode !== 'broken' && Math.random() < 0.55;
+      if (combo) move = 'slash';
       b.lastMove = move;
       b.move = move;
       b.mode = 'tell';
@@ -1447,7 +1554,7 @@
       b.moveActive = move === 'slash' && b.slashTempo === 'slow' ? 0.22 : moveDef.active;
       b.moveRecover = move === 'slash' && b.slashTempo === 'slow' ? 1.3 : move === 'slash' && b.encounter === 'rift' ? 0.95 : moveDef.recover;
       const tell = move === 'slash' && b.slashTempo === 'slow' ? 1.45 : move === 'slash' && b.slashTempo === 'fast' ? 0.82 : moveDef.tell;
-      b.timer = tell * this.phaseSpeed();
+      b.timer = tell * this.phaseSpeed() * (combo ? 0.6 : 1);
       b.hitResolved = false;
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
@@ -1505,6 +1612,12 @@
           // 序列帧环按实际判定半径缩放，保证画面读到的范围和 hitbox 一致
           const sb = this.skillFx('fx-soulburst', 'fx_soulburst');
           this.spawnFx(sb.anim, sb.tex, this.bossSprite.x, FLOOR - 24, range / 58, 9);
+          // 烈焰残渣：震爆环的边缘开始烧。刻意不烧 Boss 脚下——
+          // 否则配合贴身灼烧会让玩家完全无法靠近输出，P5 就不可通关了。
+          if (b.phase === 5 && b.revived) {
+            this.spawnEmber(this.bossSprite.x - range * 0.72, 62);
+            this.spawnEmber(this.bossSprite.x + range * 0.72, 62);
+          }
           if (distance <= range && this.isPlayerGrounded()) {
             this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range, guardable: true, parryable: true, parryRange: 150 });
           } else {
@@ -1548,6 +1661,8 @@
           this.spawnBurst(b.sealX, FLOOR - 24, 0xcf83ff, 18);
           const rb = this.skillFx('fx-rune-burst', 'fx_rune');
           this.spawnFx(rb.anim, rb.tex, b.sealX, FLOOR - 30, 1.05, 6);
+          // 符印炸开后原地继续烧：玩家刚站的地方变成禁区，逼他持续换位
+          if (b.phase === 5 && b.revived) this.spawnEmber(b.sealX, 84);
           if (escaped) {
             this.stats.bossWhiffs += 1;
             this.stats.bossWhiffsByMove.wave += 1;
@@ -1986,7 +2101,7 @@
         this.cameras.main.zoomTo(1.14, 700);
         this.dimScreen(0.62, 500);
       });
-      this.time.delayedCall(1600, () => {
+      this.deferBeat(1600, () => {
         this.startDialogue(STORY.revive, () => this.igniteFieryForm(bx));
       });
     }
@@ -2054,7 +2169,7 @@
       });
       this.time.delayedCall(2400, () => { this.spawnBurst(bx, FLOOR - 30, 0x8a7a6a, 26); });
       // 它不会安安静静地死——残骸聚成一颗核，做最后一次自爆突进
-      this.time.delayedCall(2800, () => {
+      this.deferBeat(2800, () => {
         this.startDialogue(STORY.burnout, () => this.beginFinalDive(bx));
       });
     }
@@ -2130,6 +2245,7 @@
       this.spawnBurst(lockTx, FLOOR - 60, 0xffd27a, 62);
       this.spawnBurst(lockTx, FLOOR - 30, 0xff4d14, 50);
       this.spawnBurst(lockTx, FLOOR - 10, 0xff3a10, 34);
+      this.spawnEmber(lockTx, 108);
       if (d.core) d.core.destroy();
       if (d.halo) d.halo.destroy();
       if (d.reticle) d.reticle.destroy();
@@ -2142,6 +2258,119 @@
           if (this.status === 'run') this.endRun(true);
         });
       });
+    }
+
+    // ==================== 烈焰残渣 / 焚天 / 裂隙牵引 ====================
+    // ① 残渣：技能落点留下燃烧地面，把竞技场一格一格烧成禁区
+    spawnEmber(x, r) {
+      if (!this.embers) this.embers = [];
+      // 同位置已经有残渣就不重复堆，避免叠加出瞬间暴毙
+      if (this.embers.some((e) => Math.abs(e.x - x) < 40)) return;
+      this.embers.push({ x, r: r || EMBER_RADIUS, life: EMBER_LIFE, max: EMBER_LIFE, seed: Math.random() * 6.28 });
+    }
+
+    updateEmbers(dt) {
+      if (!this.embers || !this.embers.length) return;
+      for (const e of this.embers) e.life -= dt;
+      this.embers = this.embers.filter((e) => e.life > 0);
+      if (this.status !== 'run' || this.dialogueActive) return;
+      const p = this.playerState;
+      if (p.invuln > 0 || p.hurtTimer > 0) return;
+      for (const e of this.embers) {
+        if (Math.abs(this.player.x - e.x) <= e.r) {
+          this.emberAccum = (this.emberAccum || 0) + dt;
+          if (this.emberAccum >= 0.62) {
+            this.emberAccum = 0;
+            this.floatText(this.player.x, this.player.y - 118, '踩到殘火', '#ff8a4c');
+            this.playerDamage('烈焰殘渣', 3);
+          }
+          return;
+        }
+      }
+      this.emberAccum = 0;
+    }
+
+    drawEmbers() {
+      if (!this.emberGfx) this.emberGfx = this.add.graphics().setDepth(7);
+      const g = this.emberGfx;
+      g.clear();
+      if (!this.embers || !this.embers.length) return;
+      const t = this.elapsed;
+      for (const e of this.embers) {
+        const f = e.life / e.max;
+        const pulse = 0.88 + Math.sin(t * 7 + e.seed) * 0.12;
+        g.fillStyle(0xff4d14, 0.17 * f + 0.05).fillCircle(e.x, FLOOR - 6, e.r * pulse);
+        g.fillStyle(0xff8a3a, 0.13 * f + 0.04).fillCircle(e.x, FLOOR - 6, e.r * 0.70 * pulse);
+        g.lineStyle(2, 0xffb45c, 0.32 * f + 0.10).strokeCircle(e.x, FLOOR - 6, e.r * pulse);
+        for (let i = 0; i < 4; i += 1) {
+          const ox = Math.sin(t * 3 + i * 2.1 + e.seed) * e.r * 0.55;
+          const fl = 0.5 + Math.sin(t * 9 + i * 1.7 + e.seed) * 0.3;
+          g.fillStyle(0xffd27a, 0.5 * f).fillCircle(e.x + ox, FLOOR - 14 - fl * 20, 3 + fl * 4);
+        }
+      }
+    }
+
+    // 火柱：喷发 → 留残渣
+    eruptColumn(x) {
+      for (let i = 0; i < 4; i += 1) {
+        this.time.delayedCall(i * 65, () => {
+          const fl = this.add.sprite(x + (Math.random() - 0.5) * 34, FLOOR - 6, 'fx_flame', 0)
+            .setOrigin(0.5, 1).setDepth(18).setScale(0.85 + Math.random() * 0.5).play('fx-flame');
+          fl.anims.timeScale = 1.7;
+          this.tweens.add({ targets: fl, alpha: 0, duration: 760, delay: 240, onComplete: () => fl.destroy() });
+        });
+      }
+      this.spawnBurst(x, FLOOR - 40, 0xffd27a, 30);
+      this.spawnBurst(x, FLOOR - 96, 0xff5a1e, 24);
+      this.spawnEmber(x, 96);
+    }
+
+    // ② 焚天：全屏只有一处安全口
+    castSkyBurn() {
+      const zones = this.boss.burnZones || [];
+      if (!zones.length) return;
+      this.cameras.main.shake(460, 0.012);
+      this.playSfx('sfx_rune_burst', 0.45);
+      this.playSfx('sfx_boss_phase', 0.28);
+      let hit = null;
+      for (const z of zones) {
+        if (z.safe) continue;
+        this.eruptColumn(z.x);
+        if (Math.abs(this.player.x - z.x) < 96) hit = z;
+      }
+      const safe = zones.find((z) => z.safe);
+      if (safe) {
+        this.floatText(safe.x, FLOOR - 96, '安全', '#9fe8c0');
+        this.playSfx('sfx_guard', 0.14);
+      }
+      if (hit) this.playerDamage('焚天', this.bossMoves().burn.damage);
+      this.setMessage('焚天：地面被烧穿，只剩一处没被点燃。');
+      this.boss.burnZones = null;
+    }
+
+    // ④ 裂隙牵引
+    castRiftPull() {
+      this.playSfx('sfx_boss_tell', 0.42);
+      this.cameras.main.shake(240, 0.005);
+      this.setMessage('裂隙牵引：它要把你拽进火里——顶住方向键往外跑。');
+    }
+
+    // ⑥ 残血红色暗角：越接近死亡，屏幕边缘越红、越随心跳脉动
+    drawVignette() {
+      if (!this.vigGfx) this.vigGfx = this.add.graphics().setDepth(47);
+      const g = this.vigGfx;
+      g.clear();
+      const p = this.playerState;
+      const fiery = this.boss.phase === 5 && this.boss.revived;
+      const hpFactor = Math.max(0, 1 - p.hp / 55);
+      const danger = (fiery ? 0.10 : 0) + hpFactor * 0.62;
+      if (danger <= 0.03) return;
+      const pulse = 0.72 + Math.sin(this.elapsed * 4.2) * 0.28;
+      for (let i = 0; i < 5; i += 1) {
+        const k = i / 5;
+        g.lineStyle(24, 0x8a0f08, danger * pulse * (0.30 - k * 0.05));
+        g.strokeRect(-2 + k * 22, -2 + k * 22, WIDTH + 4 - k * 44, HEIGHT + 4 - k * 44);
+      }
     }
 
     // ==================== SLG 式对话系统 ====================
@@ -2167,7 +2396,16 @@
       this.dlgPortrait = this.add.text(px + 56, py + 56, '', { fontFamily: font, fontSize: '38px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setDepth(62);
       this.dlgName = this.add.text(px + 114, py + 16, '', { fontFamily: font, fontSize: '17px', fontStyle: 'bold', color: '#ffffff' }).setDepth(62);
       this.dlgBody = this.add.text(px + 114, py + 46, '', { fontFamily: font, fontSize: '15px', color: '#dde5f4', lineSpacing: 7, wordWrap: { width: pw - 150 } }).setDepth(62);
-      this.dlgHint = this.add.text(px + pw - 16, py + ph - 24, '空格 / 点击 继续　·　Esc 跳过', { fontFamily: font, fontSize: '12px', color: '#8f9ab3' }).setOrigin(1, 0).setDepth(62);
+      this.dlgHint = this.add.text(px + pw - 16, py + ph - 24, '空格 / 点击 继续　·　Esc 跳過全部', { fontFamily: font, fontSize: '12px', color: '#8f9ab3' }).setOrigin(1, 0).setDepth(62);
+      // 右上角的跳过按钮：不想看剧情的玩家一键推完，而不是被按住看
+      this.dlgSkip = this.add.text(px + pw - 16, py + 12, '跳過 ▸', { fontFamily: font, fontSize: '13px', color: '#c9b98f' })
+        .setOrigin(1, 0).setDepth(63).setInteractive({ useHandCursor: true });
+      this.dlgSkip.on('pointerover', () => this.dlgSkip.setColor('#ffe9b0'));
+      this.dlgSkip.on('pointerout', () => this.dlgSkip.setColor('#c9b98f'));
+      this.dlgSkip.on('pointerdown', (pointer, lx, ly, event) => {
+        if (event && event.stopPropagation) event.stopPropagation();
+        this.skipAllDialogue();
+      });
     }
 
     showDialogueLine() {
@@ -2221,10 +2459,39 @@
       const cb = this.dialogueOnDone;
       this.dialogueOnDone = null;
       this.dialogueQueue = [];
-      for (const key of ['dlgGfx', 'dlgName', 'dlgBody', 'dlgPortrait', 'dlgHint']) {
+      for (const key of ['dlgGfx', 'dlgName', 'dlgBody', 'dlgPortrait', 'dlgHint', 'dlgSkip']) {
         if (this[key]) { this[key].destroy(); this[key] = null; }
       }
       if (cb) cb();
+    }
+
+    // 过场的一拍。存下来是为了让玩家能按空格/点击直接跳过等待，
+    // 而不是干等两秒才轮到对话。用 done 标记防止到点后重复触发。
+    deferBeat(ms, fn) {
+      const token = { done: false, fn };
+      this.pendingBeat = token;
+      this.time.delayedCall(ms, () => {
+        if (token.done) return;
+        token.done = true;
+        if (this.pendingBeat === token) this.pendingBeat = null;
+        fn();
+      });
+    }
+
+    skipPendingBeat() {
+      const t = this.pendingBeat;
+      if (!t || t.done) return false;
+      t.done = true;
+      this.pendingBeat = null;
+      t.fn();
+      return true;
+    }
+
+    // 一次性推完整段对话（对话框右上角的「跳過」，Esc 同效）
+    skipAllDialogue() {
+      if (!this.dialogueActive) return;
+      this.dialogueQueue = [];
+      this.endDialogue();
     }
 
     // 全屏压暗层（过场用）。没有就建一个，之后复用。
@@ -2342,6 +2609,28 @@
             g.fillStyle(0xff4d14, 0.22).fillCircle(this.boss.targetX, FLOOR - 4, this.bossMoves().rush.range);
             g.lineStyle(4, 0xff8a3a, 0.9).strokeCircle(this.boss.targetX, FLOOR - 4, this.bossMoves().rush.range);
             g.lineStyle(2, 0xfff0c8, 0.8).strokeCircle(this.boss.targetX, FLOOR - 4, 18);
+          } else if (move === 'burn') {
+            // ② 焚天：5 个区域烧 4 个，只留一个安全口
+            if (!this.boss.burnZones) {
+              const safe = Math.floor(Math.random() * 5);
+              this.boss.burnZones = [0, 1, 2, 3, 4].map((i) => ({ x: 110 + i * 178, safe: i === safe }));
+            }
+            for (const z of this.boss.burnZones) {
+              if (z.safe) {
+                g.fillStyle(0x2f6b4a, 0.20).fillCircle(z.x, FLOOR - 5, 96);
+                g.lineStyle(3, 0x8fe0b0, 0.85).strokeCircle(z.x, FLOOR - 5, 96);
+                g.lineStyle(2, 0xd8ffe8, 0.7).lineBetween(z.x - 20, FLOOR - 5, z.x + 20, FLOOR - 5);
+                g.lineBetween(z.x, FLOOR - 25, z.x, FLOOR + 15);
+              } else {
+                g.fillStyle(0xff4d14, 0.22).fillCircle(z.x, FLOOR - 5, 96);
+                g.lineStyle(4, 0xff8a3a, 0.9).strokeCircle(z.x, FLOOR - 5, 96);
+                g.lineStyle(2, 0xffd27a, 0.55).strokeCircle(z.x, FLOOR - 5, 72);
+              }
+            }
+          } else if (move === 'pull') {
+            g.lineStyle(3, 0xff4d14, 0.45).lineBetween(this.bossSprite.x, FLOOR - 206, this.player.x, this.player.y - 74);
+            g.lineStyle(1, 0xffd27a, 0.7).lineBetween(this.bossSprite.x, FLOOR - 206, this.player.x, this.player.y - 74);
+            g.lineStyle(3, 0xffb45c, 0.9).strokeCircle(this.player.x, FLOOR - 3, 40);
           } else if (move === 'wave') {
             const radius = this.bossMoves().wave.range;
             g.fillStyle(0xff4d14, 0.34).fillCircle(this.boss.sealX, FLOOR - 5, radius);
@@ -2432,10 +2721,20 @@
       const rift = this.boss.encounter === 'rift';
       g.fillStyle(rift ? (this.boss.phase === 4 ? 0xf5a2ff : this.boss.phase === 3 ? 0xc98aff : this.boss.phase === 2 ? 0x9f7bea : 0x8068cb) : 0xe17b83, 1).fillRoundedRect(x + 2, y + 2, (width - 4) * (this.boss.hp / this.boss.maxHp), 9, 4);
       g.lineStyle(1, 0xd9c9b3, 0.62).strokeRoundedRect(x, y, width, 13, 5);
-      g.fillStyle(0x111722, 0.78).fillRoundedRect(x, y + 19, width, 6, 3);
-      g.fillStyle(0xe0c187, 0.95).fillRoundedRect(x + 1, y + 20, (width - 2) * (this.boss.posture / 100), 4, 2);
+      // ④ 架势条：原来只有 6px 高、没有刻度，玩家读不出"还差多少破架势"。
+      // 现在加粗到 9px，并在 60% / 100% 处画刻度（两次弹反即破）。
+      const py2 = y + 21;
+      g.fillStyle(0x111722, 0.85).fillRoundedRect(x, py2, width, 9, 4);
+      const pw2 = (width - 2) * Math.min(1, this.boss.posture / 100);
+      const full = this.boss.posture >= 100;
+      g.fillStyle(full ? 0xfff0c8 : 0xe0c187, full ? 1 : 0.95).fillRoundedRect(x + 1, py2 + 1, Math.max(0, pw2), 7, 3);
+      g.lineStyle(1, 0x6b5a3a, 0.7).lineBetween(x + width * 0.52, py2 + 1, x + width * 0.52, py2 + 8);
+      g.lineStyle(1, 0xffd27a, full ? 1 : 0.5).strokeRoundedRect(x, py2, width, 9, 4);
+      this.postureLabel.setText(`架勢 ${Math.round(this.boss.posture)}/100　·　兩次精準彈反可破`);
+      this.postureLabel.setVisible(true);
       this.bossLabel.setText(`${rift ? '裂隙巫妖' : '幽影守卫精英'} · ${rift ? `P${this.boss.phase}` : '精英'} · ${Math.ceil(this.boss.hp)} / ${this.boss.maxHp}`);
       this.bossLabel.setVisible(true);
+      if (this.postureLabel) this.postureLabel.setVisible(true);
     }
 
     drawPlayerDefense() {
@@ -2578,8 +2877,18 @@
         this.player.play('hero-dead', true);
         this.playSfx('sfx_death', 0.5);
       }
+      // ③ 战败要说清楚"死在谁手上"。原来只有一句通用文案，玩家学不到东西。
+      const dmgRank = Object.entries(this.stats.damageBySource).sort((a, b) => b[1] - a[1]);
+      const killer = dmgRank[0];
+      const killerLine = killer
+        ? `致命招式：${killer[0]}（累计 -${killer[1]}）` + (dmgRank[1] ? `　其次：${dmgRank[1][0]} (-${dmgRank[1][1]})` : '')
+        : '';
       document.querySelector('#overlayTitle').textContent = win ? '裂隙巫妖被击败' : '试炼中断';
-      document.querySelector('#overlayText').textContent = '可以填写试玩反馈：哪些招式容易读、哪次受击不公平、格挡与弹反是否值得使用？';
+      document.querySelector('#overlayText').textContent = win
+        ? '可以填写试玩反馈：哪些招式容易读、哪次受击不公平、格挡与弹反是否值得使用？'
+        : (killerLine
+          ? `你倒在了「${killer[0]}」手上。${killerLine}\n下次下去之前，先想清楚这一招该怎么读。`
+          : '可以填写试玩反馈：哪些招式容易读、哪次受击不公平、格挡与弹反是否值得使用？');
       document.querySelector('#startBtn').innerHTML = '再跑完整试炼 <b>↻</b>';
       document.querySelector('#bossBtn').innerHTML = '重开 Boss 练习 <b>↻</b>';
       document.querySelector('#resultSummary').hidden = false;
