@@ -1,17 +1,39 @@
 (() => {
   'use strict';
 
-  const WIDTH = 960;
+  const WIDTH = 960;          // 画布/视口宽度，也是场地宽度
+  // 场地宽度 = 视口宽度：**不做地图滚动**（滚动玩起来很不舒服）。
+  // 想让屏幕"感觉更大"，靠的是压缩 Boss 与技能的范围占比，而不是延申地图。
+  // 注意：下面所有 clamp / 地面宽度 / 弹道边界都派生自这个常量，
+  // 所以它就是唯一的场地开关，改回 1360 就恢复宽场地。
+  const WORLD_W = 960;
+  // 最终自爆：瞄准时长、锁定后给的逃跑时间、突进时长、爆炸半径（=判定半径）
+  const DIVE_AIM = 1.4;
+  const DIVE_ESCAPE = 1.0;
+  const DIVE_RUSH = 0.5;
+  const DIVE_RADIUS = 110;
   const HEIGHT = 540;
   const FLOOR = 466;
-  const ELITE_MAX_HP = 360;
-  const BOSS_MAX_HP = 720;
+  const ELITE_MAX_HP = 420;
+  const BOSS_MAX_HP = 900;
   // P5「亡者归来」：血条自燃烧尽的秒数。到 P5 时血量从这个时间全额往下掉，
   // 玩家输出可以把血条压得更低，因此「撑到烧完」与「直接打死」都算通关。
   const PHASE5_BURN_SECONDS = 35;
   // 烈焰残渣：技能落点留下的燃烧地面，是 P5 压迫感的主来源
-  const EMBER_LIFE = 7.0;
-  const EMBER_RADIUS = 78;
+  // 场地留白：原来残渣半径 78 / 持续 7 秒，几下就把场地铺满了，
+  // 玩家没有立足点。现在缩小并缩短，压迫感靠密度而不是靠铺满。
+  const EMBER_LIFE = 5.0;
+  const EMBER_RADIUS = 56;
+  // 骸骨巨手：法术形态（P1-P4）与附身形态（P5）血量不同
+  const HAND_TRAP_HP = 140;
+  // 巨手抓取半径：预警圈和判定必须用同一个值，否则「看到多少」和「实际多少」不一致
+  const HAND_GRAB_R = 62;
+  const HAND_REACH = 250;
+  const HAND_ATTACHED_HP = 200;
+  // 祈祷术
+  const PRAY_DURATION = 1.6;
+  const PRAY_COOLDOWN = 18;
+  const PRAY_HEAL = 45;
 
   // 对话剧本。
   // 背景：幽影峡谷本是关隘。三百年前关隘破了，守将没能合上裂隙，
@@ -31,8 +53,22 @@
       { who: '幽影守卫', color: 0xb98cff, text: '……口令不对。三百年了。没人记得口令。' },
       { who: '裂隙巫妖', color: 0xff8a5c, text: '（声音像是从很深的水底传来）让他进来。' },
       { who: '裂隙巫妖', color: 0xff8a5c, text: '他都走到这儿了。别浪费。' },
-      { who: '骑士', color: 0xcfe0ff, text: '你认识我？' },
       { who: '裂隙巫妖', color: 0xff8a5c, text: '我认识每一个。我记得他们所有的名字。' },
+      // ④ 提前做的选择会影响最后：尊重它 -> 正常自爆；挑衅它 -> 激怒，自爆快到几乎躲不掉
+      { who: '骑士', color: 0xcfe0ff, text: '（裂隙在等你开口——）', choices: [
+        { label: '我只是路过。', flag: 'calm', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '……路过。好。那就快点走完。' },
+        ] },
+        { label: '你守了三百年。你叫什么名字？', flag: 'respect', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '（沉默了很久）……很久没人问过了。' },
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '进来吧。我会认真跟你打完。' },
+        ] },
+        { label: '第二十个，也不会是最后一个。', flag: 'taunt', reply: [
+          { who: '裂隙巫妖', color: 0xff3a12, text: '……（裂隙里的风突然停了）' },
+          { who: '裂隙巫妖', color: 0xff3a12, text: '好。好得很。' },
+          { who: '旁白', color: 0x8fa8c8, text: '你听见了锁链绷紧的声音。' },
+        ] },
+      ] },
     ],
     revive: [
       { who: '骑士', color: 0xcfe0ff, text: '结束了。你输了。' },
@@ -53,15 +89,42 @@
       { who: '裂隙巫妖', color: 0xff6a3a, text: '我不会一个人走。' },
     ],
     survived: [
-      { who: '骑士', color: 0xcfe0ff, text: '（大口喘气，撑着剑站起来）' },
-      { who: '骑士', color: 0xcfe0ff, text: '你的名字。你还没说你的名字。' },
       { who: '旁白', color: 0x8fa8c8, text: '裂隙合上了。没有人回答。' },
-      { who: '旁白', color: 0x8fa8c8, text: '峡谷重新安静下来。这一次，是真的安静了。' },
+      { who: '騎士', color: 0xcfe0ff, text: '（你走上前，想說點什麼——）', choices: [
+        { label: '你的名字。你還沒說你的名字。', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '（很輕）……埃德加。關隘守將，第七任。' },
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '很久沒人叫過了。' },
+          { who: '旁白', color: 0x8fa8c8, text: '風停了。峽谷第一次真正安靜下來。' },
+        ] },
+        { label: '你不用再守了。安息吧。', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '……我守了三百年。' },
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '這句話，我等了二十個人。' },
+          { who: '旁白', color: 0x8fa8c8, text: '灰燼落回地面。沒有人再站起來。' },
+        ] },
+        { label: '我記不住你的臉，但我會記住你的聲音。', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '（停頓很久）……那就夠了。' },
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '十九個下去的人，沒有一個這麼說。' },
+          { who: '旁白', color: 0x8fa8c8, text: '你轉身往回走，沒有回頭。' },
+        ] },
+      ] },
     ],
     tookIt: [
-      { who: '裂隙巫妖', color: 0xff8a5c, text: '（最后一丝声音，几乎是温柔的）……抓到你了。' },
-      { who: '旁白', color: 0x8fa8c8, text: '第二十个，和第二十一个。' },
-      { who: '旁白', color: 0x8fa8c8, text: '峡谷里终于不那么安静了。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（最後一絲聲音，幾乎是溫柔的）……抓到你了。' },
+      { who: '旁白', color: 0x8fa8c8, text: '第二十個，和第二十一個。' },
+      { who: '騎士', color: 0xcfe0ff, text: '（倒在地上的你，還能說最後一句——）', choices: [
+        { label: '……至少這次，有人記得我。', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '我會記得。跟他們一起。' },
+          { who: '旁白', color: 0x8fa8c8, text: '峽谷裡終於不那麼安靜了。' },
+        ] },
+        { label: '第二十一個，也不會是最後一個。', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '（笑）我知道。我一直在等。' },
+          { who: '旁白', color: 0x8fa8c8, text: '關隘的燈，又亮了一盞。' },
+        ] },
+        { label: '（什麼都沒說）', reply: [
+          { who: '裂隙巫妖', color: 0xff8a5c, text: '……也好。安靜點，也很好。' },
+          { who: '旁白', color: 0x8fa8c8, text: '沒有人再說話。峽谷合上了。' },
+        ] },
+      ] },
     ],
   };
   const ULTIMATE_REQUIRED = 70;
@@ -91,10 +154,13 @@
     'sfx_boss_phase', 'sfx_boss_death', 'sfx_enemy_death',
   ];
 
+  // 三段连击。duration 是总时长，activeFrom~activeTo 是判定帧窗口。
+  // 原来一套三连要 0.72+0.78+0.84 再加三段间隔 = 2.70 秒，前摇后摇都拖，
+  // 现在压到 1.74 秒。伤害不动，所以是纯手感提升（DPS 顺带提高 36%）。
   const ATTACKS = [
-    { anim: 'hero-attack', damage: 14, duration: 0.72, activeFrom: 0.24, activeTo: 0.37, reach: 112 },
-    { anim: 'hero-attack', damage: 20, duration: 0.78, activeFrom: 0.30, activeTo: 0.46, reach: 124 },
-    { anim: 'hero-attack', damage: 30, duration: 0.84, activeFrom: 0.39, activeTo: 0.57, reach: 138 },
+    { anim: 'hero-attack', damage: 14, duration: 0.46, activeFrom: 0.15, activeTo: 0.25, reach: 112 },
+    { anim: 'hero-attack', damage: 20, duration: 0.50, activeFrom: 0.18, activeTo: 0.29, reach: 124 },
+    { anim: 'hero-attack', damage: 30, duration: 0.58, activeFrom: 0.23, activeTo: 0.36, reach: 138 },
   ];
 
   const BOSS_MOVES = {
@@ -104,24 +170,35 @@
     wave: { label: '地面震荡', tell: 1.12, active: 0.22, recover: 1.02, damage: 22, guardable: false, parryable: false, range: 0, type: 'wave' },
   };
   const ELITE_MOVES = {
-    slash: { ...BOSS_MOVES.slash, label: '幽影重斩', tell: 0.78, recover: 0.88, damage: 22, range: 172 },
-    shot: { ...BOSS_MOVES.shot, label: '暗影投射物', tell: 0.66, recover: 0.66, damage: 17 },
-    rush: { ...BOSS_MOVES.rush, label: '影袭突进', tell: 0.82, recover: 0.96, damage: 30, range: 98 },
-    wave: { ...BOSS_MOVES.wave, label: '地面震荡', tell: 1.02, recover: 0.9, damage: 25 },
+    slash: { ...BOSS_MOVES.slash, label: '幽影重斩', tell: 0.72, active: 0.2, recover: 0.62, damage: 26, range: 178 },
+    shot: { ...BOSS_MOVES.shot, label: '暗影连弩', tell: 0.60, recover: 0.48, damage: 19 },
+    rush: { ...BOSS_MOVES.rush, label: '影袭突进', tell: 0.76, active: 0.5, recover: 0.68, damage: 34, range: 104 },
+    wave: { ...BOSS_MOVES.wave, label: '盾震', tell: 0.96, active: 0.3, recover: 0.66, damage: 26 },
   };
 
   // Controlled strings keep test runs comparable while reducing one-pattern farming.
+  // 精英分三段：越往后招式越多、出手越快（phaseSpeed/phaseGap 按 phase 取值）
   const ELITE_PATTERNS = {
-    1: [['slash', 'shot', 'rush', 'slash', 'wave', 'shot'], ['shot', 'rush', 'slash', 'wave', 'slash', 'shot']],
+    1: [['slash', 'shot', 'slash', 'wave'], ['shot', 'slash', 'shot', 'wave']],
+    2: [['slash', 'rush', 'shot', 'slash', 'wave'], ['shot', 'rush', 'slash', 'wave', 'slash']],
+    3: [['rush', 'slash', 'wave', 'rush', 'shot', 'slash'], ['slash', 'rush', 'wave', 'slash', 'shot', 'rush']],
   };
   const RIFT_PATTERNS = {
     1: [['slash', 'shot', 'slash', 'shot'], ['shot', 'slash', 'shot', 'slash']],
-    2: [['slash', 'rush', 'shot', 'slash', 'rush'], ['shot', 'slash', 'rush', 'slash', 'shot']],
-    3: [['wave', 'shot', 'rush', 'slash', 'wave', 'rush'], ['rush', 'wave', 'slash', 'shot', 'rush', 'wave']],
-    4: [['rush', 'wave', 'slash', 'shot', 'rush', 'wave'], ['wave', 'rush', 'shot', 'slash', 'wave', 'rush']],
+    // ② 招式压到 4 招：形状、颜色、预警各不相同，玩家才分得清
+    2: [['slash', 'hand', 'rush', 'shot'], ['hand', 'slash', 'shot', 'rush']],
+    3: [['hand', 'slash', 'rush', 'shot'], ['rush', 'hand', 'slash', 'shot']],
+    4: [['rush', 'hand', 'slash', 'shot'], ['hand', 'rush', 'shot', 'slash']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
-    5: [['slash', 'rush', 'shot', 'burn', 'wave', 'shot', 'pull', 'slash'],
-        ['rush', 'burn', 'shot', 'slash', 'pull', 'wave', 'shot', 'slash']],
+    // ② P5 只留 4 招，全都是「一眼能认出来」的：
+    //    冲撞（横冲）/ 抓取（手伸出）/ 震爆（圆环）/ 锤击（手高举）
+    //    砍掉：魂火环伺、焚天、焚身乱舞——它们和上面几招在红圈上长得太像了
+    5: [['rush', 'handGrab', 'slash', 'handSlam'],
+        ['handSlam', 'rush', 'handGrab', 'slash']],
+    // 第二阶段：招式更密，隕石雨穿插其中
+    '5b': [['meteor', 'slash', 'dash', 'handGrab'],
+           ['dash', 'handSlam', 'meteor', 'slash'],
+           ['handGrab', 'meteor', 'dash', 'handSlam']],
   };
   const RIFT_MOVES = {
     slash: { ...BOSS_MOVES.slash, label: '靈魂震爆', tell: 1.45, active: 0.22, recover: 1.3, damage: 22, range: 205 },
@@ -130,8 +207,18 @@
     wave: { ...BOSS_MOVES.wave, label: '亡魂印爆', tell: 1.35, active: 0.34, recover: 1.25, damage: 24, range: 92 },
     // ② 焚天：全屏只有一处安全口
     burn: { ...BOSS_MOVES.wave, label: '焚天', tell: 1.9, active: 0.4, recover: 1.5, damage: 34, range: 96, guardable: false, parryable: false },
-    // ④ 裂隙牵引：把玩家往自己身上拽
-    pull: { ...BOSS_MOVES.wave, label: '裂隙牵引', tell: 1.3, active: 1.1, recover: 1.1, damage: 26, range: 0, guardable: false, parryable: false },
+    // D 删掉「裂隙牵引」：被强制拽着走体验差，而且和巨手抓取功能重叠
+    // B 骸骨巨手：从地下窜出抓人。躲开就没事，被抓住要打碎它
+    hand: { ...BOSS_MOVES.wave, label: '骸骨巨手', tell: 1.55, active: 0.5, recover: 1.15, damage: 30, range: 88, guardable: false, parryable: false },
+    // C 燃烧形态：巨手长在身上，锤击与抓取
+    handSlam: { ...BOSS_MOVES.wave, label: '巨手錘擊', tell: 1.30, active: 0.42, recover: 1.05, damage: 38, range: 128, guardable: false, parryable: false },
+    handGrab: { ...BOSS_MOVES.wave, label: '巨手抓取', tell: 1.45, active: 0.45, recover: 1.0, damage: 34, range: 250, guardable: false, parryable: false },
+    // 第二阶段：焚身衝刺。横向高速冲过全场，留下火痕
+    dash: { ...BOSS_MOVES.rush, label: '焚身衝刺', tell: 0.92, active: 0.55, recover: 0.85, damage: 22, range: 0, guardable: false, parryable: false },
+    // 第二阶段：隕石雨。火球沿一个方向依次砸落
+    meteor: { ...BOSS_MOVES.wave, label: '隕石雨', tell: 1.2, active: 2.8, recover: 0.9, damage: 16, range: 0, guardable: false, parryable: false },
+    // ④ 焚身乱舞：连续瞬移乱窜，每段落点留火
+    blitz: { ...BOSS_MOVES.wave, label: '焚身乱舞', tell: 1.0, active: 2.1, recover: 1.0, damage: 22, range: 0, guardable: false, parryable: false },
   };
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -181,6 +268,12 @@
       this.load.spritesheet('fx_soulfire_crimson', 'assets/fx/fx_soulfire_crimson.png', { frameWidth: 64, frameHeight: 64 });
       this.load.spritesheet('fx_soulfire_hit_crimson', 'assets/fx/fx_soulfire_hit_crimson.png', { frameWidth: 96, frameHeight: 96 });
       this.load.spritesheet('fx_flame', 'assets/fx/fx_flame.png', { frameWidth: 80, frameHeight: 120 });
+      // 隕石雨：离线渲染的白热核心 + 燃烧拖尾 + 落地火环
+      this.load.spritesheet('fx_meteor', 'assets/fx/fx_meteor.png', { frameWidth: 96, frameHeight: 200 });
+      this.load.spritesheet('fx_meteor_impact', 'assets/fx/fx_meteor_impact.png', { frameWidth: 160, frameHeight: 160 });
+      // 骸骨巨手：离线渲染的成品图，比代码盲画几何图形可控得多。
+      // 4 帧开合——只做张开/攥紧两张的话，贴图会在 curl=0.5 处硬切。
+      for (let hi = 0; hi < 4; hi += 1) this.load.image(`hand_c${hi}`, `assets/fx/hand_c${hi}.png`);
     }
 
     create() {
@@ -190,7 +283,10 @@
       this.makeAnimations();
       this.makeHeroAnimations();
       this.makeFxAnimations();
-      this.floorBody = this.add.rectangle(WIDTH / 2, FLOOR + 35, WIDTH + 60, 70, 0x000000, 0);
+      // 地面必须覆盖最宽的那种场地。原来按 WIDTH 算（右边缘只到 990），
+      // 而 Boss 战的物理边界放到了 1322 —— 玩家走过 990 就踩空掉下去。
+      // 非 Boss 关卡的物理边界仍然收在 922，所以这里加长不会有副作用。
+      this.floorBody = this.add.rectangle(WORLD_W / 2, FLOOR + 35, WORLD_W + 60, 70, 0x000000, 0);
       this.physics.add.existing(this.floorBody, true);
 
       this.player = this.physics.add.sprite(180, FLOOR, 'hero-idle', 0);
@@ -217,17 +313,21 @@
       this.roomGraphics = this.add.graphics().setDepth(-20);
       this.telegraph = this.add.graphics().setDepth(5);
       this.fxGraphics = this.add.graphics().setDepth(24);
-      this.hudGraphics = this.add.graphics().setDepth(30);
+      // A UI 必须固定在屏幕上，否则相机滚动时会跟着世界跑掉
+      this.hudGraphics = this.add.graphics().setDepth(30).setScrollFactor(0);
       this.doorGraphics = this.add.graphics().setDepth(4);
-      this.bossLabel = this.add.text(WIDTH / 2, 7, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '12px', color: '#f5dfcf', fontStyle: 'bold', letterSpacing: 2 }).setOrigin(0.5, 0).setDepth(31).setVisible(false);
+      this.bossLabel = this.add.text(WIDTH / 2, 7, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '12px', color: '#f5dfcf', fontStyle: 'bold', letterSpacing: 2 }).setOrigin(0.5, 0).setDepth(31).setVisible(false).setScrollFactor(0);
       // 架势标签：让玩家读得出「还差多少破架势」，而不是盯着一条没有刻度的细线
-      this.postureLabel = this.add.text(206, 61, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '10px', color: '#e0c187' }).setOrigin(0, 0).setDepth(31).setVisible(false);
+      this.postureLabel = this.add.text(206, 61, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '10px', color: '#e0c187' }).setOrigin(0, 0).setDepth(31).setVisible(false).setScrollFactor(0);
+      this.prayLabel = this.add.text(52, 61, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '11px', color: '#b9e8c0' }).setOrigin(0, 0).setDepth(31).setScrollFactor(0);
+      this.handLabel = this.add.text(206, 73, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '10px', color: '#e0d4f0' }).setOrigin(0, 0).setDepth(31).setVisible(false).setScrollFactor(0);
       this.actionCaption = this.add.text(WIDTH / 2, 77, '', { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '12px', color: '#f2d6a1', stroke: '#0b1119', strokeThickness: 4, align: 'center' }).setOrigin(0.5).setDepth(31).setAlpha(0);
 
-      this.playerState = { hp: 100, stamina: 100, energy: 0, invuln: 0, invulnSource: '', guardBreak: 0, guardRecover: 0, parryWindow: 0, parryCooldown: 0, parryPending: false, parryAnim: 0, dodgeTimer: 0, dodgeCooldown: 0, ultimateTimer: 0, hurtTimer: 0, attack: null, attackCooldown: 0, comboIndex: 0, comboGrace: 0, combo: 0, facing: 1, lastGuard: 0, groundHits: 0 };
+      this.playerState = { hp: 100, maxHp: 100, stamina: 100, energy: 0, invuln: 0, invulnSource: '', guardBreak: 0, guardRecover: 0, parryWindow: 0, parryCooldown: 0, parryPending: false, parryAnim: 0, dodgeTimer: 0, dodgeCooldown: 0, ultimateTimer: 0, hurtTimer: 0, attack: null, attackCooldown: 0, comboIndex: 0, comboGrace: 0, combo: 0, facing: 1, lastGuard: 0, groundHits: 0 };
       this.boss = { hp: BOSS_MAX_HP, maxHp: BOSS_MAX_HP, phase: 1, encounter: 'rift', mode: 'hidden', timer: 0, move: '', sequence: 0, lastMove: '', slashCount: 0, slashTempo: 'slow', moveActive: 0, moveRecover: 0, posture: 0, hurtTimer: 0, hitResolved: false, targetX: 0, facing: -1, rushHit: false, ghostTimer: 0 };
 
       this.keys = this.input.keyboard.addKeys({
+        pray: Phaser.Input.Keyboard.KeyCodes.R,
         left: Phaser.Input.Keyboard.KeyCodes.A,
         leftArrow: Phaser.Input.Keyboard.KeyCodes.LEFT,
         right: Phaser.Input.Keyboard.KeyCodes.D,
@@ -271,12 +371,15 @@
       this.input.keyboard.addCapture([Phaser.Input.Keyboard.KeyCodes.SPACE, Phaser.Input.Keyboard.KeyCodes.UP, Phaser.Input.Keyboard.KeyCodes.LEFT, Phaser.Input.Keyboard.KeyCodes.RIGHT]);
 
       // 策划测试快捷键：1/2/3/4 切 Boss 阶段，Q 补满能量，H 回满血
-      this.input.keyboard.on('keydown-ONE', () => this.debugSetPhase(1));
-      this.input.keyboard.on('keydown-TWO', () => this.debugSetPhase(2));
-      this.input.keyboard.on('keydown-THREE', () => this.debugSetPhase(3));
-      this.input.keyboard.on('keydown-FOUR', () => this.debugSetPhase(4));
+      // ③ 有选项时数字键优先用来选台词，否则才是策划测试切阶段
+      this.input.keyboard.on('keydown-ONE', () => { if (this.choiceActive()) this.pickChoice(0); else this.debugSetPhase(1); });
+      this.input.keyboard.on('keydown-TWO', () => { if (this.choiceActive()) this.pickChoice(1); else this.debugSetPhase(2); });
+      this.input.keyboard.on('keydown-THREE', () => { if (this.choiceActive()) this.pickChoice(2); else this.debugSetPhase(3); });
+      this.input.keyboard.on('keydown-FOUR', () => { if (this.choiceActive()) this.pickChoice(3); else this.debugSetPhase(4); });
       this.input.keyboard.on('keydown-Q', () => { if (this.debugMode) { this.playerState.energy = ULTIMATE_REQUIRED; this.setMessage('策划测试：能量已补满。'); } });
-      this.input.keyboard.on('keydown-H', () => { if (this.debugMode) { this.playerState.hp = this.godMode ? 10000 : 100; this.setMessage('策划测试：生命已回满。'); } });
+      this.input.keyboard.on('keydown-H', () => { if (this.debugMode) { this.playerState.hp = this.playerState.maxHp || 100; this.setMessage('策划测试：生命已回满。'); } });
+      // ② 10000 血承伤测试：会真的掉血，用来量每一招的伤害
+      this.input.keyboard.on('keydown-B', () => this.toggleTestHp());
 
       this.room = 'warmup';
       this.roomIndex = 0;
@@ -332,6 +435,8 @@
         ['fx-soulfire-crimson', 'fx_soulfire_crimson', 0, 7, 14, -1],
         ['fx-soulfire-hit-crimson', 'fx_soulfire_hit_crimson', 0, 7, 26, 0],
         ['fx-flame', 'fx_flame', 0, 15, 18, -1],
+        ['fx-meteor', 'fx_meteor', 0, 11, 22, -1],
+        ['fx-meteor-impact', 'fx_meteor_impact', 0, 9, 22, 0],
       ];
       for (const [key, texture, start, end, frameRate, repeat] of defs) {
         this.anims.create({ key, frames: this.anims.generateFrameNumbers(texture, { start, end }), frameRate, repeat });
@@ -497,7 +602,7 @@
       document.querySelector('#storyOverlay').hidden = true;
       this.clearEncounterObjects();
       const p = this.playerState;
-      Object.assign(p, { hp: this.godMode ? 10000 : 100, stamina: 100, energy: (mode === 'boss' || this.debugMode) ? (this.godMode ? ULTIMATE_REQUIRED : 40) : 0, invuln: 0, invulnSource: '', guardBreak: 0, guardRecover: 0, parryWindow: 0, parryCooldown: 0, parryPending: false, parryAnim: 0, dodgeTimer: 0, dodgeCooldown: 0, ultimateTimer: 0, hurtTimer: 0, attack: null, attackCooldown: 0, comboIndex: 0, comboGrace: 0, combo: 0, facing: 1, lastGuard: 0, groundHits: 0 });
+      Object.assign(p, { hp: this.godMode ? 10000 : 100, maxHp: this.godMode ? 10000 : 100, stamina: 100, energy: (mode === 'boss' || this.debugMode) ? (this.godMode ? ULTIMATE_REQUIRED : 40) : 0, invuln: 0, invulnSource: '', guardBreak: 0, guardRecover: 0, parryWindow: 0, parryCooldown: 0, parryPending: false, parryAnim: 0, dodgeTimer: 0, dodgeCooldown: 0, ultimateTimer: 0, hurtTimer: 0, attack: null, attackCooldown: 0, comboIndex: 0, comboGrace: 0, combo: 0, facing: 1, lastGuard: 0, groundHits: 0 });
       this.player.setVisible(true).clearTint().setFlipX(false);
       this.player.play('hero-idle');
       this.player.setPosition((mode === 'boss' || this.debugMode) ? 216 : 132, FLOOR);
@@ -546,8 +651,20 @@
       this.telegraph && this.telegraph.clear();
       this.stopBossFlames();
       this.embers = [];
+      this.boss.orbs = null;
+      this.boss.blitzSpots = null;
+      this.meteorRain = null;
+      this.meteorCount = 0;
+      this.boss.hand = null;
+      this.boss.handGone = false;
+      this.playerState.grabbed = null;
+      if (this.grabGfx) this.grabGfx.clear();
+      if (this.grabText) this.grabText.setVisible(false);
+      if (this.handGfx) this.handGfx.clear();
+      if (this.prayGfx) this.prayGfx.clear();
       if (this.emberGfx) this.emberGfx.clear();
       if (this.pullGfx) this.pullGfx.clear();
+      if (this.orbGfx) this.orbGfx.clear();
     }
 
     enterRoom(index, first = false) {
@@ -855,29 +972,77 @@
       this.elapsed += dt;
       this.messageTimer = Math.max(0, this.messageTimer - dt);
       this.updateDialogue(dt);
-      this.updateFinalDive(dt);
-      // 对话期间冻结玩法，但背景演出（火焰/余烬/UI）继续跑
-      if (!this.dialogueActive) {
-        this.updatePlayer(dt);
-        this.updateEnemies(dt);
-        this.updateBoss(dt);
+      // ① 对话期间必须整体冻结。原来只停了 玩家/敌人/Boss，
+      // 漏了 updateProjectiles——玩家在念台词时会被飞来的冥火打死。
+      // 这里直接早退，只保留画面演出与 UI，玩法逻辑一律不跑。
+      if (this.dialogueActive) {
+        this.drawEmbers();
+        this.drawOrbs();
+        this.drawGrabUi();
+        this.drawFinalBoss();
+        this.drawPlayerDefense();
+        this.drawBossBars();
+        this.drawVignette();
+        this.updateUi();
+        return;
       }
+      this.updateFinalDive(dt);
+      this.updatePray(dt);
+      this.updateHand(dt);
+      this.updatePlayer(dt);
+      this.updateEnemies(dt);
+      this.updateBoss(dt);
+      this.updateOrbs(dt);
+      this.updateMeteorRain(dt);
       this.updateProjectiles(dt);
       this.updateEffects(dt);
       this.updateEmbers(dt);
       this.drawEmbers();
+      this.drawOrbs();
+      this.drawHand();
+      this.drawPray();
       this.drawFinalBoss();
       this.updateTelegraph();
       this.drawPlayerDefense();
+      this.drawGrabUi();
+      this.drawDebugPanel();
       this.drawBossBars();
       this.drawDoor();
       this.drawVignette();
+      this.updateCamera();
       this.updateUi();
     }
 
     updatePlayer(dt) {
       const p = this.playerState;
       const justDown = Phaser.Input.Keyboard.JustDown;
+      // 被骸骨巨手抓住：完全无法移动，只能按 J 打巨手
+      if (p.grabbed) {
+        // ② 安全网：只要手已经没了（被打碎 / Boss 燃尽 / 清场），立刻放开。
+        // 手没了的时候 updateHand 会直接 return，抓取计时器不再递减，
+        // 没有这层保护玩家会被永久钉住。
+        if (!this.boss.hand || this.boss.hand.destroyed) {
+          this.releaseGrab(false);
+          return;
+        }
+        this.player.body.setVelocity(0, 0);
+        // 抖动：一眼看出被控住了，而不是站着不动
+        this.player.x = p.grabbed.x + Math.sin(this.elapsed * 42) * 3.2;
+        this.player.play('hero-hurt', true);
+        // 攻击键的轮询在函数后半段，这里是提前 return 的，
+        // 必须自己把 J 的判定和冷却补回来，否则玩家永远打不碎巨手。
+        p.attackCooldown = Math.max(0, p.attackCooldown - dt);
+        if (justDown(this.keys.attack)) this.tryAttack();
+        return;
+      }
+      // 祈祷中：不能移动，也不能起手攻击
+      if (p.prayTimer > 0) {
+        this.player.body.setVelocityX(0);
+        this.player.play('hero-idle', true);
+        return;
+      }
+      // 攻击结束后把动画速度还原，否则会连带把跑步/待机也放快
+      if (!p.attack && this.player.anims.timeScale !== 1) this.player.anims.timeScale = 1;
       p.invuln = Math.max(0, p.invuln - dt);
       if (p.invuln === 0) p.invulnSource = '';
       p.guardBreak = Math.max(0, p.guardBreak - dt);
@@ -886,6 +1051,8 @@
       p.parryAnim = Math.max(0, p.parryAnim - dt);
       p.dodgeCooldown = Math.max(0, p.dodgeCooldown - dt);
       p.ultimateTimer = Math.max(0, p.ultimateTimer - dt);
+      p.prayTimer = Math.max(0, (p.prayTimer || 0) - dt);
+      p.prayCooldown = Math.max(0, (p.prayCooldown || 0) - dt);
       p.hurtTimer = Math.max(0, p.hurtTimer - dt);
       p.attackCooldown = Math.max(0, p.attackCooldown - dt);
       p.comboGrace = Math.max(0, p.comboGrace - dt);
@@ -913,6 +1080,7 @@
       if (justDown(this.keys.parry)) this.parry();
       if (justDown(this.keys.dodge) || justDown(this.keys.dodgeAlt)) this.dodge();
       if (justDown(this.keys.ultimate) || justDown(this.keys.ultimateAlt)) this.ultimate();
+      if (justDown(this.keys.pray)) this.pray();
 
       const guardHeld = this.keys.guard.isDown || this.touch.guard;
       // 举盾即时取消攻击动作（guard cancel），避免"已经按F却还在攻击里被打"
@@ -983,7 +1151,7 @@
           this.setMessage('門被幽影封住了。按 E 精準彈反接下近衛的一次攻擊，封印才會碎。');
         }
       }
-      this.player.x = clamp(this.player.x, 52, 916);
+      this.player.x = clamp(this.player.x, 52, this.arenaMaxX());
     }
 
     performAction(action) {
@@ -994,6 +1162,7 @@
       else if (action === 'parry') this.parry();
       else if (action === 'dodge') this.dodge();
       else if (action === 'ultimate') this.ultimate();
+      else if (action === 'pray') this.pray();
     }
 
     jump() {
@@ -1008,6 +1177,16 @@
     tryAttack() {
       if (this.status !== 'run') return;
       const p = this.playerState;
+      // 被抓住时，攻击直接打在巨手身上——打碎才能脱身
+      if (p.grabbed) {
+        if (p.attackCooldown > 0) return;
+        p.attackCooldown = 0.32;
+        this.player.play('hero-attack', true);
+        this.spawnBurst(p.grabbed.x, FLOOR - 92, 0xe8d19a, 14);
+        this.playSfx('sfx-hit', 0.32);
+        this.damageHand(24);
+        return;
+      }
       if (p.guardBreak > 0 || p.guardRecover > 0 || p.dodgeTimer > 0 || p.ultimateTimer > 0 || p.hurtTimer > 0) return;
       if (p.attack) {
         if (!p.attack.queued && p.attack.timer >= p.attack.duration * 0.45 && p.attack.timer <= p.attack.duration * 0.82 && p.comboIndex < 2) {
@@ -1028,8 +1207,12 @@
       p.attack = { ...move, timer: 0, hit: false, queued: false, index, facing: p.facing };
       // 三段连击各有一版音高递增的挥砍声，听感上能分辨连段进度
       this.playSfx(`sfx_slash_${index + 1}`, 0.30);
-      this.player.play(move.anim, true);
-      p.attackCooldown = 0.13;
+      // hero-attack 序列帧固定是 10 帧 @15fps = 0.667 秒。
+      // 动作加速后如果不同步加快播放，挥砍会在半途被截断——那就反而更迟钝了。
+      // 这里按 duration 反推 timeScale，让动画正好铺满整个招式。
+      this.player.play(move.anim);
+      this.player.anims.timeScale = (10 / 15) / move.duration;
+      p.attackCooldown = 0.07;
     }
 
     advanceAttack(dt) {
@@ -1043,7 +1226,7 @@
       if (attack.timer >= attack.duration) {
         const queued = attack.queued && attack.index < 2;
         p.attack = null;
-        p.attackCooldown = 0.12;
+        p.attackCooldown = 0.06;
         if (queued) {
           p.comboGrace = 0.9;
           this.startAttack(attack.index + 1);
@@ -1076,7 +1259,10 @@
       // Give close Boss contact a small forgiveness radius so point-blank attacks still connect.
       const bossOverlap = target.boss && Math.abs(dx) <= 72;
       const inFront = bossOverlap || Math.sign(dx || 1) === attack.facing;
-      const sameLane = Math.abs(target.y - this.player.y) < 104;
+      // ① 跳跃时玩家 y 会抬起约 150px，原来固定的 <104 会让所有空中挥砍落空。
+      // 改成按「对地高度差」判定：空中挥砍能打到地面目标，地面挥砍仍是严格同层。
+      const airBonus = this.isPlayerAirborne() ? 200 : 0;
+      const sameLane = Math.abs(target.y - this.player.y) < 104 + airBonus;
       if (!inFront || Math.abs(dx) > attack.reach || !sameLane) {
         this.stats.whiffs += 1;
         this.setMessage('揮空：攻擊只判定前方有效距離，不會隔空或背身命中。');
@@ -1085,7 +1271,10 @@
       }
       if (target.boss) {
         const recovery = this.boss.mode === 'recover' || this.boss.mode === 'broken';
-        const multiplier = recovery ? 1.35 : 0.38;
+        // ② 原来普通命中只有 ×0.38，一套三连（14+20+30）实际只打 24 点，
+        // 1100 血要磨 46 套，纯折磨。现在普通 ×0.72、收招/破架 ×1.6，
+        // 既保证「打收招明显更赚」，又让普通输出不至于像白打。
+        const multiplier = recovery ? 1.6 : 0.72;
         const damage = Math.max(1, Math.round(attack.damage * multiplier));
         this.damageBoss(damage, recovery);
         p.combo += 1;
@@ -1233,13 +1422,14 @@
         if (shot.fx) shot.fx.setPosition(shot.x, shot.y);
         shot.glow.setPosition(shot.x, shot.y);
         shot.glow.setScale(1 + Math.sin(shot.age * 17) * 0.08);
-        if (shot.age > 4 || shot.x < 20 || shot.x > WIDTH - 20) {
+        if (shot.age > 4 || shot.x < 20 || shot.x > WORLD_W + 20) {
           shot.dead = true;
           continue;
         }
         const close = Math.abs(shot.x - this.player.x) < 29 && Math.abs(shot.y - (this.player.y - 72)) < 48;
         if (close) {
-          const result = this.resolveIncoming({ source: shot.source, damage: shot.damage, attackerX: shot.x - shot.direction * 18, range: 65, guardable: true, parryable: false, parryRange: 0 });
+          // 法术可以弹，但标成 spell——弹反它不给 Boss 架势，所以不会让它掉血
+          const result = this.resolveIncoming({ source: shot.source, damage: shot.damage, attackerX: shot.x - shot.direction * 18, range: 65, guardable: true, parryable: true, parryRange: 82, spell: true });
           if (result !== 'none') {
             shot.dead = true;
             this.playSfx('sfx_soulfire_hit', 0.28);
@@ -1266,11 +1456,22 @@
       const REGEN_CAP = b.maxHp * 0.38;
       if (b.encounter === 'rift' && b.phase === 4 && b.regenIdle > 4 && b.hp < REGEN_CAP && b.mode !== 'transition' && b.mode !== 'intro' && b.mode !== 'broken') {
         const before = b.hp;
-        b.hp = Math.min(REGEN_CAP, b.hp + 14 * dt);
+        b.hp = Math.min(REGEN_CAP, b.hp + 9 * dt);
         if (b.regenFxTimer <= 0) {
           b.regenFxTimer = 0.28;
-          this.spawnBurst(b.x || this.bossSprite.x, FLOOR - 112, 0xff4d4d, 8);
-          this.floatText(this.bossSprite.x, FLOOR - 224, `+${Math.round(b.hp - before) || 1}`, '#ff7a7a');
+          // 回血必须一眼看出是"回"不是"掉"。原来用红色粒子 + 红色数字，
+          // 玩家会误以为有什么东西在打 Boss（包括以为是自己的技能打到自己）。
+          // 改成绿色 + 「回復」字样 + 上浮粒子。
+          this.spawnBurst(this.bossSprite.x, FLOOR - 112, 0x6fe0a8, 8);
+          const heal = Math.max(1, Math.round(b.hp - before));
+          this.floatText(this.bossSprite.x, FLOOR - 224, `回復 +${heal}`, '#8affc0');
+          for (let i = 0; i < 3; i += 1) {
+            // 注意：b 是 this.boss（状态对象），bossSprite 在 Scene 上，必须是 this.bossSprite
+            const mote = this.add.circle(this.bossSprite.x + (Math.random() - 0.5) * 70,
+              FLOOR - 60 - Math.random() * 60, 2.4, 0x8affc0, 0.9).setDepth(22);
+            this.tweens.add({ targets: mote, y: mote.y - 70 - Math.random() * 50, alpha: 0,
+              duration: 620 + Math.random() * 260, onComplete: () => mote.destroy() });
+          }
           this.setMessage('裂隙巫妖正在汲取暗影之力回血！快攻擊它打斷回復！');
         }
       }
@@ -1306,6 +1507,29 @@
       // P5 自燃烧条：血量被时间持续往下拉，但玩家输出可以把它压得更低
       if (b.phase === 5 && b.revived) {
         b.burn = Math.max(0, (b.burn ?? PHASE5_BURN_SECONDS) - dt);
+        // 第二阶段：烧条过半就换招、提速，并来一次明确的表现
+        const p5s = (b.burn / PHASE5_BURN_SECONDS) > 0.5 ? 1 : 2;
+        if (p5s !== b.p5Stage) {
+          const first = b.p5Stage === undefined;
+          b.p5Stage = p5s;
+          if (p5s === 2 && !first) {
+            b.sequence = 0;
+            b.mode = 'transition';
+            b.timer = 0.85;
+            b.move = '';
+            b.hitResolved = true;
+            this.playSfx('sfx_boss_phase', 0.55);
+            this.cameras.main.flash(300, 220, 70, 30);
+            this.cameras.main.shake(480, 0.014);
+            this.setMessage('亡者歸來 · 第二階段：它開始下隕石雨了。');
+            for (let i = 0; i < 3; i += 1) {
+              this.time.delayedCall(i * 160, () => {
+                const rf = this.skillFx('fx-soulburst', 'fx_soulburst');
+                this.spawnFx(rf.anim, rf.tex, this.bossSprite.x, FLOOR - 40, 3 + i, 9);
+              });
+            }
+          }
+        }
         const cap = b.maxHp * (b.burn / PHASE5_BURN_SECONDS);
         if (b.hp > cap) b.hp = cap;
         if (b.hp <= 0) {
@@ -1336,10 +1560,14 @@
       if (b.mode === 'idle' || b.mode === 'recover') {
         b.facing = facing;
         this.bossSprite.setFlipX(facing < 0);
-        if (b.encounter === 'elite' && b.mode === 'idle' && Math.abs(dx) > 218) {
-          this.bossSprite.body && this.bossSprite.body.setVelocityX(facing * 145);
-          this.bossSprite.x = clamp(this.bossSprite.x + facing * 138 * dt, 90, 870);
-          this.playBossAnimation('knight-run');
+        // ③ 裂隙巫妖原来在待机时完全不移动，玩家绕远就安全了，压迫感全无。
+        // 现在距离拉开就朝玩家漂移（比精英慢，但仍会贴上来）。
+        const chase = b.encounter === 'elite' ? 218 : 260;
+        const chaseSpeed = b.encounter === 'elite' ? 138 : 104;
+        if (b.mode === 'idle' && Math.abs(dx) > chase && b.hp > 0) {
+          this.bossSprite.body && this.bossSprite.body.setVelocityX(facing * chaseSpeed * 1.05);
+          this.bossSprite.x = clamp(this.bossSprite.x + facing * chaseSpeed * dt, 90, this.bossMaxX());
+          if (b.encounter === 'elite') this.playBossAnimation('knight-run');
         } else {
           this.playBossAnimation('knight-idle');
         }
@@ -1350,7 +1578,7 @@
       if (b.mode === 'active' && b.move === 'pull' && b.encounter === 'rift') {
         const dir = Math.sign(this.bossSprite.x - this.player.x) || -1;
         const k = 1 - Math.max(0, b.timer) / Math.max(0.01, b.moveActive);
-        this.player.x = clamp(this.player.x + dir * (170 + 300 * k) * dt, 52, 916);
+        this.player.x = clamp(this.player.x + dir * (170 + 300 * k) * dt, 52, this.arenaMaxX());
         if (!this.pullGfx) this.pullGfx = this.add.graphics().setDepth(24);
         const pg = this.pullGfx;
         pg.clear();
@@ -1363,6 +1591,46 @@
         if (Math.random() < 0.35) this.spawnBurst(this.player.x, this.player.y - 70, 0xff6a2a, 2);
       } else if (this.pullGfx) {
         this.pullGfx.clear();
+      }
+
+      // ② 焚身衝刺：横向高速掠过，沿路留火，撞到就掉血。
+      // 和乱舞的区别：乱舞是瞬移点，冲刺是一条持续移动的线。
+      if (b.mode === 'active' && b.move === 'dash' && b.encounter === 'rift') {
+        const dir = b.dashDir || b.facing;
+        this.bossSprite.x = clamp(this.bossSprite.x + dir * 1180 * dt, 90, this.bossMaxX());
+        b.dashTrailT = (b.dashTrailT || 0) - dt;
+        if (b.dashTrailT <= 0) {
+          b.dashTrailT = 0.055;
+          this.spawnEmber(this.bossSprite.x, 40);
+          const ghost = this.add.rectangle(this.bossSprite.x, FLOOR - 175, 84, 270, 0xff6a2a, 0.24).setDepth(9);
+          this.tweens.add({ targets: ghost, alpha: 0, duration: 300, onComplete: () => ghost.destroy() });
+          this.spawnBurst(this.bossSprite.x, FLOOR - 120, 0xffd27a, 4);
+        }
+        if (Math.abs(this.playerState.x - this.bossSprite.x) < 82
+            && this.playerState.invuln <= 0 && this.playerState.hurtTimer <= 0) {
+          this.playerDamage('焚身衝刺', 22);
+        }
+      }
+
+      // ④ 焚身乱舞：连续瞬移到 4 个随机落点，每段落点都会烧起来，贴着会被撞伤。
+      // 这是"到处乱飞乱窜"的那一招。
+      if (b.mode === 'active' && b.move === 'blitz' && b.blitzSpots && b.blitzSpots.length) {
+        b.blitzT = (b.blitzT || 0) - dt;
+        if (b.blitzT <= 0) {
+          b.blitzT = 0.30;
+          this.spawnEmber(this.bossSprite.x, 58);
+          this.spawnBurst(this.bossSprite.x, FLOOR - 140, 0xffb45c, 22);
+          const nx = b.blitzSpots[b.blitzIdx % b.blitzSpots.length];
+          b.blitzIdx = (b.blitzIdx || 0) + 1;
+          // 残影
+          const ghost = this.add.rectangle(this.bossSprite.x, FLOOR - 170, 70, 250, 0xff6a2a, 0.28).setDepth(9);
+          this.tweens.add({ targets: ghost, alpha: 0, duration: 320, onComplete: () => ghost.destroy() });
+          this.bossSprite.setFlipX(nx < this.bossSprite.x);
+          this.bossSprite.x = nx;
+          this.spawnBurst(nx, FLOOR - 140, 0xffd27a, 26);
+          this.cameras.main.shake(120, 0.004);
+          if (Math.abs(this.player.x - nx) < 74) this.playerDamage('焚身亂舞', 20);
+        }
       }
 
       if (b.mode === 'idle') {
@@ -1381,6 +1649,14 @@
           if (b.move === 'slash' && b.encounter === 'elite') this.playBossAnimation('knight-slash3-swing');
           if (b.move === 'burn' && b.encounter === 'rift') this.castSkyBurn();
           if (b.move === 'pull' && b.encounter === 'rift') this.castRiftPull();
+          if (b.move === 'blitz' && b.encounter === 'rift') this.castBlitz();
+          if (b.move === 'meteor' && b.encounter === 'rift') this.castMeteorRain();
+          if (b.move === 'dash' && b.encounter === 'rift') this.castDash();
+          if (b.move === 'hand') this.castHand();
+          if (b.move === 'handSlam') this.castHandSlam();
+          if (b.move === 'handGrab') this.castHandGrab();
+          // ② 精英原来完全没有技能特效，只有地面预警线；补一套
+          if (b.encounter === 'elite') this.spawnEliteMoveFx(b.move);
           if (b.move === 'shot') {
             const distanceToPlayer = Math.abs(this.player.x - this.bossSprite.x);
             const spawnOffset = Math.min(55, Math.max(0, distanceToPlayer - 12));
@@ -1494,13 +1770,33 @@
       if (!this.debugMode || this.status !== 'run') return;
       if (this.room === 'boss' && this.boss.encounter !== 'rift') return;
       // 各阶段测试血量取区间中段，保证稳定落在该阶段
-      const testHp = { 1: 630, 2: 450, 3: 270, 4: 100 };
+      const testHp = { 1: 800, 2: 570, 3: 340, 4: 130 };
       if (this.room !== 'boss') {
         this.room = 'boss';
         this.roomIndex = 3;
         this.enterBoss(true);
       }
       const b = this.boss;
+      // 【火焰形態】按鍵切的是「階段 1 / 2」，不是血量階段。
+      // 原来直接改 b.phase 会让 revived 与 phase 对不上，外观退回普通巫妖。
+      if (b.revived) {
+        if (phase > 2) {
+          this.setMessage('火焰形態只有兩個階段：【1】第一階段（不下隕石雨）　【2】第二階段（隕石雨 + 衝刺）。');
+          return;
+        }
+        b.p5Stage = phase;
+        // 燒條比例決定階段：第二階段要壓到 50% 以下
+        b.burn = PHASE5_BURN_SECONDS * (phase === 2 ? 0.30 : 0.85);
+        b.hp = b.maxHp * (b.burn / PHASE5_BURN_SECONDS);
+        b.phase = 5;
+        b.mode = 'idle';
+        b.timer = 0.3;
+        b.sequence = 0;
+        b.move = '';
+        b.hitResolved = true;
+        this.setMessage(`【策劃測試】火焰形態 · 第 ${phase} 階段（燒條剩 ${Math.round(b.burn)} 秒 / ${PHASE5_BURN_SECONDS}）。`);
+        return;
+      }
       b.hp = testHp[phase];
       b.phase = phase;
       b.mode = 'idle';
@@ -1525,19 +1821,25 @@
     // 招式之间的间隔单独收得更紧：它只影响出招密度，不压缩玩家的反应时间，
     // 所以可以比 phaseSpeed 更激进，用来制造「越来越喘不过气」的压力。
     phaseGap() {
+      // 第二阶段再收紧一档，解决「后半段感觉不出招」的问题
+      if (this.boss.encounter === 'rift' && this.boss.phase === 5 && this.boss.p5Stage === 2) return 0.22;
       const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60, 5: 0.30 };
       return table[this.boss.phase] || 1.0;
     }
 
     startBossMove() {
       const b = this.boss;
-      const patterns = (b.encounter === 'rift' ? RIFT_PATTERNS : ELITE_PATTERNS)[b.phase];
+      // 第二阶段（烧条过半）换成 '5b' 那套
+      const pkey = b.encounter === 'rift' && b.phase === 5 && b.p5Stage === 2 ? '5b' : b.phase;
+      const patterns = (b.encounter === 'rift' ? RIFT_PATTERNS : ELITE_PATTERNS)[pkey] || RIFT_PATTERNS[5];
       const sequenceLength = patterns[0].length;
       const cycle = Math.floor(b.sequence / sequenceLength);
       const pattern = patterns[cycle % patterns.length];
       let patternIndex = b.sequence % sequenceLength;
       if (pattern[patternIndex] === b.lastMove) patternIndex = (patternIndex + 1) % sequenceLength;
       let move = pattern[patternIndex];
+      // C 附身巨手被打碎后，锤击与抓取永久失效
+      if (b.handGone && (move === 'handSlam' || move === 'handGrab')) move = 'slash';
       b.sequence = cycle * sequenceLength + patternIndex + 1;
       // ⑥ 连招：P3+ 时幽魂换位之后有 55% 概率直接接灵魂震爆，
       // 而且前摇缩短 40%——四招独立循环太好读了，每招都能"躲完就喘"，没有压迫。
@@ -1556,6 +1858,7 @@
       const tell = move === 'slash' && b.slashTempo === 'slow' ? 1.45 : move === 'slash' && b.slashTempo === 'fast' ? 0.82 : moveDef.tell;
       b.timer = tell * this.phaseSpeed() * (combo ? 0.6 : 1);
       b.hitResolved = false;
+      b.handLocked = false;
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
       if (move === 'wave') this.playSfx('sfx_rune_mark', 0.24);
@@ -1564,11 +1867,11 @@
       const dashLimit = 295;
       b.moveRange = move === 'slash' && b.encounter === 'rift' ? (b.slashTempo === 'fast' ? 145 : moveDef.range) : moveDef.range;
       b.targetX = move === 'rush' && b.encounter === 'rift'
-        ? clamp(this.player.x - b.facing * 150, 120, 840)
+        ? clamp(this.player.x - b.facing * 150, 120, this.bossMaxX() - 30)
         : move === 'rush'
-          ? clamp(this.player.x, Math.max(90, this.bossSprite.x - dashLimit), Math.min(870, this.bossSprite.x + dashLimit))
-        : clamp(this.player.x, 90, 870);
-      b.sealX = clamp(this.player.x, 90, 870);
+          ? clamp(this.player.x, Math.max(90, this.bossSprite.x - dashLimit), Math.min(this.bossMaxX(), this.bossSprite.x + dashLimit))
+        : clamp(this.player.x, 90, this.bossMaxX());
+      b.sealX = clamp(this.player.x, 90, this.bossMaxX());
       if (move === 'wave' && b.encounter === 'rift') {
         // 蓄力段 8 帧 @6fps ≈ 1.33s，与 wave 的 tell(1.35s) 基本一致，
         // 播完即自动销毁，正好在判定瞬间让位给 fx-rune-burst。
@@ -1619,7 +1922,8 @@
             this.spawnEmber(this.bossSprite.x + range * 0.72, 62);
           }
           if (distance <= range && this.isPlayerGrounded()) {
-            this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range, guardable: true, parryable: true, parryRange: 150 });
+            // ① 弹反范围必须 ≥ 判定范围，否则会出现「被打中但弹不了」的死区
+            this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range, guardable: true, parryable: true, parryRange: range + 20 });
           } else {
             this.stats.bossWhiffs += 1;
             this.stats.bossWhiffsByMove.slash += 1;
@@ -1630,7 +1934,7 @@
         }
         const inFront = Math.sign(this.player.x - this.bossSprite.x || 1) === b.facing;
         if (inFront && Math.abs(this.player.x - this.bossSprite.x) <= def.range && this.isPlayerGrounded()) {
-          this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range: def.range, guardable: true, parryable: true, parryRange: 150 });
+          this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range: def.range, guardable: true, parryable: true, parryRange: def.range + 20 });
         } else {
           this.setMessage('横斩落空：離開刀路後可在守衛收招時反擊。');
           this.stats.bossWhiffs += 1;
@@ -1653,7 +1957,7 @@
         }
         const inFront = Math.sign(this.player.x - this.bossSprite.x || 1) === b.facing;
         if (inFront && Math.abs(this.player.x - this.bossSprite.x) <= def.range + 20 && this.isPlayerGrounded()) {
-          this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range: def.range + 20, guardable: false, parryable: true, parryRange: 150 });
+          this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range: def.range + 20, guardable: false, parryable: true, parryRange: def.range + 50 });
         }
       } else if (move === 'wave') {
         if (b.encounter === 'rift') {
@@ -1693,14 +1997,17 @@
     beginBossRecovery(duration) {
       const b = this.boss;
       b.mode = 'recover';
-      b.timer = Math.max(0.72, duration);
+      // ③ 「技能不连贯」的根源就在这个 0.72 秒硬下限：每招打完都强制站桩 0.72 秒，
+      // 玩家能安心打完一整套。P3+ 放开下限，让招式真正咬在一起。
+      const floor = b.encounter === 'rift' && b.phase >= 3 ? 0.40 : 0.72;
+      b.timer = Math.max(floor, duration);
       b.move = b.move || 'slash';
       this.playBossAnimation('knight-impact2');
       this.setMessage('Boss 收招：完整傷害窗口，接一到兩段連擊後拉開距離。');
       this.updateMoveCard(b.move, '反擊窗口');
     }
 
-    resolveIncoming({ source, damage, attackerX, range, guardable, parryable, parryRange = 110, dodgeable = true }) {
+    resolveIncoming({ source, damage, attackerX, range, guardable, parryable, parryRange = 110, dodgeable = true, spell = false }) {
       const p = this.playerState;
       if (this.status !== 'run') return 'invulnerable';
       const dodgeIFrame = p.invuln > 0 && p.invulnSource === 'dodge';
@@ -1712,7 +2019,10 @@
         return dodgeIFrame ? 'dodge' : 'invulnerable';
       }
       const distance = Math.abs(attackerX - this.player.x);
-      const inFront = Math.sign(attackerX - this.player.x || 1) === p.facing;
+      // ② 贴身 90px 内不再要求朝向：压在你身上的攻击应该能弹，
+      // 否则「离得近反而弹不了」非常反直觉，而且移动中朝向会乱变。
+      const inFront = Math.abs(attackerX - this.player.x) <= 90
+        || Math.sign(attackerX - this.player.x || 1) === p.facing;
 
       if (p.parryWindow > 0 && p.parryPending && parryable && inFront && distance <= parryRange) {
         p.parryPending = false;
@@ -1729,6 +2039,12 @@
         this.spawnBurst(this.player.x + p.facing * 35, this.player.y - 85, 0xfff0c8, 12);
         this.cameras.main.shake(120, 0.004);
         this.playSfx('sfx-parry', 0.42);
+        if (spell) {
+          // ① 彈反法術：只回能量與耐力。不給架勢 = 不會破防 = Boss 不掉血。
+          this.setMessage(`彈反法術 ${source}！能量 +28、耐力返還 18（法術不會讓它架勢崩潰）。`);
+          this.floatText(this.player.x + p.facing * 26, this.player.y - 132, '彈反法術', '#bfe8ff');
+          return 'parry';
+        }
         this.setMessage(`精準彈反 ${source}！架勢 -52、能量 +28、耐力返還 18，趁硬直反擊。`);
         this.floatText(this.player.x + p.facing * 26, this.player.y - 132, '精準彈反', '#f2d99f');
         if (this.room === 'boss') {
@@ -1810,6 +2126,11 @@
       p.attack = null;
       p.ultimateTimer = 0;
       p.combo = 0;
+      // 祈祷被打断：跪地回血的风险就在这里，被打到就白读
+      if (p.prayTimer > 0) {
+        p.prayTimer = 0;
+        this.setMessage('祈禱被打斷了——回血失敗，冷卻照算。');
+      }
       p.comboIndex = 0;
       p.comboGrace = 0;
       p.energy = Math.max(0, p.energy - 6);
@@ -1829,13 +2150,15 @@
     parry() {
       const p = this.playerState;
       if (this.status !== 'run' || p.parryCooldown > 0 || p.guardBreak > 0 || p.hurtTimer > 0 || p.dodgeTimer > 0 || p.ultimateTimer > 0 || p.attack) return;
-      p.parryWindow = 0.4;
-      p.parryCooldown = 0.38;
+      // ③ 窗口 0.4→0.55、失手冷却 0.38→0.24：鼓励尝试，
+      // 而不是按空一次就要干等。
+      p.parryWindow = 0.55;
+      p.parryCooldown = 0.24;
       p.parryPending = true;
       p.parryAnim = 0.26;
       this.stats.parryAttempts += 1;
       this.player.play('hero-attack', true);
-      this.setMessage('彈反窗口放寬至 0.4 秒：面向近身的可彈反招式即可成功。');
+      this.setMessage('彈反窗口 0.55 秒：可彈反的招式會在你身上顯示金色提示環。');
     }
 
     dodge() {
@@ -1860,9 +2183,27 @@
         this.setMessage('Boss 階段演出期間暫不可受擊；保留奧義，等招式或收招時再用。');
         return;
       }
-      if (this.status !== 'run' || p.energy < ULTIMATE_REQUIRED || p.guardBreak > 0 || p.guardRecover > 0 || p.hurtTimer > 0 || p.attack || p.dodgeTimer > 0 || p.parryAnim > 0 || p.ultimateTimer > 0) {
-        if (p.energy < ULTIMATE_REQUIRED) this.setMessage(`破陣能量不足：${Math.floor(p.energy)} / ${ULTIMATE_REQUIRED}。命中、格擋與彈反可累積。`);
+      if (this.status !== 'run') return;
+      if (p.energy < ULTIMATE_REQUIRED) {
+        this.setMessage(`破陣能量不足：${Math.floor(p.energy)} / ${ULTIMATE_REQUIRED}。命中、格擋與彈反可累積。`);
         return;
+      }
+      if (p.ultimateTimer > 0) return;              // 已經在放，不必提示
+      // ① 每一种真的放不出来的情况都要说清楚。
+      // 原来只有「能量不足」有提示，其余全是静默 return——
+      // 玩家打完一套按 K 被吞掉，屏幕上看不到任何反馈，会以为按键坏了。
+      if (p.guardBreak > 0) {
+        this.setMessage(`奧義未發動：格擋破防中，還要 ${p.guardBreak.toFixed(1)} 秒。`);
+        return;
+      }
+      if (p.hurtTimer > 0) { this.setMessage('奧義未發動：受擊硬直中，站穩再放。'); return; }
+      if (p.dodgeTimer > 0) { this.setMessage('奧義未發動：翻滾中。'); return; }
+      // 攻击 / 弹反 / 格挡后摇直接打断：想接奥义就该让他接，
+      // 这是「按了没反应」最常见的来源。
+      if (p.attack || p.parryAnim > 0 || p.guardRecover > 0) {
+        p.attack = null;
+        p.parryAnim = 0;
+        p.guardRecover = 0;
       }
 
       const targets = this.room === 'boss' ? [] : this.entities.filter((enemy) => {
@@ -1947,6 +2288,11 @@
         // P5 里被打死 = 通关，同样走燃尽演出
         this.beginBossBurnout();
         return;
+      }
+      // A 精英也吃阶段：三段，越后越快
+      if (b.encounter === 'elite') {
+        const eliteNext = b.hp <= b.maxHp / 3 ? 3 : b.hp <= b.maxHp * 2 / 3 ? 2 : 1;
+        if (eliteNext !== b.phase) this.transitionBossPhase(eliteNext);
       }
       const nextPhase = b.hp <= b.maxHp / 4 ? 4 : b.hp <= b.maxHp / 2 ? 3 : b.hp <= b.maxHp * 3 / 4 ? 2 : 1;
       // P5 是终结阶段，不再按血量切阶段
@@ -2071,6 +2417,7 @@
       const bx = this.bossSprite.x;
       b.revived = true;
       b.phase = 5;
+      b.p5Stage = 1;
       b.mode = 'revive';
       b.timer = 4.4;
       b.hp = b.maxHp;
@@ -2124,6 +2471,10 @@
       }
       this.spawnBurst(bx, FLOOR - 170, 0xffb45c, 54);
       this.startBossFlames();
+      // C 燃烧形态：两条骸骨巨手直接从肩膀上长出来，常驻，可被摧毁且不再生
+      this.makeHand(2, HAND_ATTACHED_HP);
+      b.handGone = false;
+      this.setMessage('兩隻骸骨巨手從它肩上長了出來——打碎它們，就能廢掉錘擊與抓取。');
       b.mode = 'idle';
       b.timer = 0.5;
       b.sequence = 0;
@@ -2143,6 +2494,18 @@
       this.playerState.invuln = Math.max(this.playerState.invuln, 4.5);
       this.playerState.hurtTimer = 0;
       this.playMusic('burnout');
+      // 骨臂是精灵不是 Graphics：Boss 都烧没了，手不能还杵在地图上
+      this.stopBossFlames();
+      // ① 手没了就必须先放开玩家，否则 grabbed 永远不会清除，
+      // 玩家会被一只不存在的手永久钉住
+      this.releaseGrab(false);
+      b.hand = null;
+      if (this.handSprites) {
+        for (const k of Object.keys(this.handSprites)) {
+          if (this.handSprites[k]) this.handSprites[k].destroy();
+        }
+        this.handSprites = null;
+      }
       this.playSfx('sfx_boss_death', 0.6);
       this.cameras.main.shake(820, 0.02);
       this.cameras.main.flash(320, 255, 214, 150);
@@ -2181,11 +2544,25 @@
       if (this.status !== 'run') return;
       const by = FLOOR - 150;
       this.cameras.main.zoomTo(1.0, 500);
-      const halo = this.add.circle(bx, by, 44, 0xff4d14, 0.42).setDepth(25);
-      const core = this.add.circle(bx, by, 19, 0xffd27a, 1).setDepth(26);
-      const reticle = this.add.graphics().setDepth(27);
-      this.finalDive = { halo, core, reticle, t: 0, locked: false, tx: this.player.x, ty: this.player.y, done: false };
+      // ⑤ 原来就是两个纯色圆，难怪假。重做成：多层光晕 + 白热核心 +
+      // 绕着核心转的火焰精灵 + 不断掉落的拖尾火星。
+      const halo = this.add.circle(bx, by, 58, 0xff2a06, 0.30).setDepth(25);
+      const mid = this.add.circle(bx, by, 36, 0xff6a1e, 0.62).setDepth(26);
+      const core = this.add.circle(bx, by, 17, 0xfff6dc, 1).setDepth(28);
+      const flames = [];
+      for (let i = 0; i < 5; i += 1) {
+        const fl = this.add.sprite(bx, by, 'fx_flame', 0)
+          .setOrigin(0.5, 0.5).setDepth(27).setScale(0.36).play('fx-flame');
+        fl.anims.timeScale = 1.7 + i * 0.08;
+        fl.setFrame(i * 3 % 16);
+        flames.push(fl);
+      }
+      const reticle = this.add.graphics().setDepth(30);
+      this.finalDive = { halo, mid, core, flames, reticle, t: 0, locked: false, tx: this.player.x, ty: this.player.y, done: false, trailT: 0 };
       this.playSfx('sfx_boss_tell', 0.42);
+      // ④ 被挑衅过就很快：逃跑窗口从 1.0 秒压到 0.4 秒，非常难躲
+      this.finalDive.escape = this.storyFlag === 'taunt' ? 0.4 : DIVE_ESCAPE;
+      if (this.storyFlag === 'taunt') this.setMessage('它被激怒了——这次自爆没有给你留时间。');
       this.setMessage('烧红的核浮在半空，开始锁定你——离开地面上的红圈。');
     }
 
@@ -2194,6 +2571,24 @@
       if (!d || d.done) return;
       d.t += dt;
       const pulse = 1 + Math.sin(this.elapsed * 18) * 0.13;
+      // 环绕核心旋转的火焰 + 彗尾火星
+      if (d.flames) {
+        for (let i = 0; i < d.flames.length; i += 1) {
+          const a = this.elapsed * (2.6 + i * 0.4) + i * (Math.PI * 2 / d.flames.length);
+          d.flames[i].setPosition(d.core.x + Math.cos(a) * 30, d.core.y + Math.sin(a) * 27);
+          d.flames[i].setFlipX(Math.cos(a) < 0);
+        }
+        d.mid.setPosition(d.core.x, d.core.y).setScale(pulse);
+        d.halo.setPosition(d.core.x, d.core.y).setScale(1 + Math.sin(this.elapsed * 7) * 0.1);
+        d.trailT = (d.trailT || 0) - dt;
+        if (d.trailT <= 0) {
+          d.trailT = 0.035;
+          const dot = this.add.circle(d.core.x + (Math.random() - 0.5) * 26, d.core.y + (Math.random() - 0.5) * 26,
+            2 + Math.random() * 3, Math.random() < 0.5 ? 0xffd27a : 0xff5a1e, 0.9).setDepth(24);
+          this.tweens.add({ targets: dot, y: dot.y + 26 + Math.random() * 30, alpha: 0, scale: 0.2,
+            duration: 380 + Math.random() * 260, onComplete: () => dot.destroy() });
+        }
+      }
       if (!d.locked) {
         // 锁定阶段：预警圈跟着玩家实时移动
         d.tx = this.player.x;
@@ -2205,31 +2600,53 @@
         d.reticle.lineStyle(2, 0xfff0c8, 0.75).strokeCircle(this.player.x, FLOOR - 3, 34);
         d.halo.setScale(pulse);
         d.core.setScale(1 + Math.sin(this.elapsed * 22) * 0.14);
-        if (d.t >= 2.2) {
+        if (d.t >= DIVE_AIM) {
           d.locked = true;
-          // 清掉此前的无敌，让"最后一下"真的算数（玩家仍可靠闪避/走位躲开）
+          d.tx = this.player.x;
+          d.lockT = d.t;
+          // 清掉此前的无敌，让"最后一下"真的算数
           this.playerState.invuln = 0;
-          this.playSfx('sfx_boss_tell', 0.55);
-          this.cameras.main.shake(220, 0.007);
-          const lockTx = this.player.x;
-          this.tweens.add({
-            targets: [d.core, d.halo],
-            x: lockTx,
-            y: FLOOR - 34,
-            duration: 400,
-            ease: 'Quad.In',
-            onComplete: () => this.resolveFinalDive(lockTx),
+          this.playSfx('sfx_boss_tell', 0.6);
+          this.cameras.main.shake(260, 0.008);
+          this.setMessage(`鎖定了！離開紅圈——有 ${(d.escape || DIVE_ESCAPE).toFixed(1)} 秒。`);
+          // 落点定死，之后不再跟随玩家
+          this.time.delayedCall((d.escape || DIVE_ESCAPE) * 1000, () => {
+            if (!this.finalDive || this.finalDive.done) return;
+            const moveTargets = [d.core, d.mid, d.halo].concat(d.flames || []);
+            this.tweens.add({
+              targets: moveTargets,
+              x: d.tx,
+              y: FLOOR - 34,
+              duration: DIVE_RUSH * 1000,
+              ease: 'Quad.In',
+              onComplete: () => this.resolveFinalDive(d.tx),
+            });
           });
         }
         return;
       }
+      // ===== 锁定阶段：地面画出真正的爆炸范围，并一直留到落地 =====
+      // （原来这里只写了 d.reticle.clear()，落点标记在最需要的时候消失了）
       d.reticle.clear();
+      const kEscape = Math.max(0, Math.min(1, (d.t - DIVE_AIM) / (d.escape || DIVE_ESCAPE)));
+      this.drawCountdown(d.reticle, d.tx, FLOOR - 4, DIVE_RADIUS, kEscape, 0xfff0c8, 0xff4d14);
+      d.reticle.lineStyle(2, 0xffd27a, 0.65).strokeCircle(d.tx, FLOOR - 4, DIVE_RADIUS * 0.55);
+      d.reticle.lineStyle(4, 0xfff0c8, 0.9).lineBetween(d.tx - 22, FLOOR - 26, d.tx + 22, FLOOR + 18);
+      d.reticle.lineBetween(d.tx + 22, FLOOR - 26, d.tx - 22, FLOOR + 18);
+      // 闪烁提示：一直喊到落地，避免玩家没看到
+      d.warnT = (d.warnT || 0) - dt;
+      if (d.warnT <= 0) {
+        d.warnT = 0.45;
+        this.floatText(d.tx, FLOOR - 128, '離開紅圈！', '#ff6a2a');
+      }
+      d.core.setPosition(d.core.x, FLOOR - 150 - Math.sin(this.elapsed * 14) * 6);
     }
 
     resolveFinalDive(lockTx) {
       const d = this.finalDive;
       if (!d || d.done) return;
       d.done = true;
+      // 判定半径和地面画的圈完全一致，玩家看到多少就是多少
       const dist = Math.abs(this.player.x - lockTx);
       // 爆炸
       this.cameras.main.flash(300, 255, 190, 130);
@@ -2242,22 +2659,660 @@
           this.spawnFx(rf.anim, rf.tex, lockTx, FLOOR - 40, 2.4 + i * 1.1, 9);
         });
       }
-      this.spawnBurst(lockTx, FLOOR - 60, 0xffd27a, 62);
-      this.spawnBurst(lockTx, FLOOR - 30, 0xff4d14, 50);
-      this.spawnBurst(lockTx, FLOOR - 10, 0xff3a10, 34);
+      this.cameras.main.flash(200, 255, 240, 210);
+      this.spawnBurst(lockTx, FLOOR - 90, 0xfff6dc, 40);
+      this.spawnBurst(lockTx, FLOOR - 60, 0xffd27a, 72);
+      this.spawnBurst(lockTx, FLOOR - 30, 0xff4d14, 60);
+      this.spawnBurst(lockTx, FLOOR - 10, 0xff3a10, 44);
       this.spawnEmber(lockTx, 108);
+      // 火柱从爆点窜起
+      for (let i = -1; i <= 1; i += 1) this.eruptColumn(lockTx + i * 70);
       if (d.core) d.core.destroy();
+      if (d.mid) d.mid.destroy();
       if (d.halo) d.halo.destroy();
+      if (d.flames) d.flames.forEach((f) => f && f.destroy());
       if (d.reticle) d.reticle.destroy();
       this.finalDive = null;
-      const hit = dist <= 96;
-      if (hit) this.playerDamage('亡者自爆', 45);
+      const hit = dist <= DIVE_RADIUS;
+      if (hit) {
+        this.playerDamage('亡者自爆', 45);
+      } else {
+        // 躲开了要给明确的正面反馈，不然玩家不知道自己是不是运气好
+        this.floatText(this.player.x, FLOOR - 150, '躲開了！', '#9fe8c0');
+        this.playSfx('sfx_dodge', 0.4);
+        this.setMessage('你跑出了爆炸範圍——最後一下躲過去了。');
+      }
       this.time.delayedCall(1100, () => {
         if (this.status !== 'run') return;   // 被炸死的话走战败结算
         this.startDialogue(hit ? STORY.tookIt : STORY.survived, () => {
           if (this.status === 'run') this.endRun(true);
         });
       });
+    }
+
+    // ==================== 骸骨巨手 / 祈祷术 ====================
+    // 巨手不是从地里冒出来的，是巫妖**从自己肩膀上伸出去的骷髅臂**。
+    //   P1-P4：念咒后一条骨臂从肩膀窜出去抓人；抓空或到期会缩回去并移除。
+    //   P5：两条骨臂常驻连在双肩，可锤击可抓取，共用 200 血条，打碎后不再生。
+    handAnchorX(side) { return this.bossSprite.x + side * 44; }
+
+    makeHand(count, hp) {
+      const b = this.boss;
+      b.hand = {
+        count,
+        hp,
+        maxHp: hp,
+        attached: count === 2,
+        destroyed: false,
+        state: count === 2 ? 'idle' : 'grabOut',
+        t: 0,
+        ext: count === 2 ? 1 : 0,
+        checked: false,
+        // 手指开合：curl 是当前值，curlTarget 是目标，中间平滑过渡
+        curl: 0,
+        curlTarget: 0,
+        grabPending: 0,
+        grabX: 0,
+        targetX: this.player.x,
+      };
+    }
+
+    // 骨臂末端（手掌）的位置：按状态在"垂在身侧"和"伸出去"之间插值
+    handTip(h, side) {
+      const bx = this.bossSprite.x;
+      // 原来垂到 FLOOR-34（几乎贴地），看起来像掉在地上而不是长在身上
+      const restX = bx + side * 86;
+      const restY = FLOOR - 148;
+      const reachX = h.targetX ?? this.player.x;
+      if (h.state === 'slamUp') return { x: reachX, y: FLOOR - 330 };
+      if (h.state === 'slamDown') return { x: reachX + side * 20, y: FLOOR - 26 };
+      const k = h.state === 'grabOut' ? h.ext : h.state === 'retract' ? h.ext : 0;
+      return { x: restX + (reachX - restX) * k, y: restY + (FLOOR - 86 - restY) * k };
+    }
+
+    // 一根骨头：两端粗、中段细（骨腰）。用六边形，比等宽线条像骨骼得多。
+    drawBone(g, x1, y1, x2, y2, w1, w2, dark, bone) {
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      const mw = Math.min(w1, w2) * 0.5;
+      const poly = (k) => ([
+        { x: x1 + nx * Math.max(0.5, w1 - k), y: y1 + ny * Math.max(0.5, w1 - k) },
+        { x: mx + nx * Math.max(0.5, mw - k * 0.5), y: my + ny * Math.max(0.5, mw - k * 0.5) },
+        { x: x2 + nx * Math.max(0.5, w2 - k), y: y2 + ny * Math.max(0.5, w2 - k) },
+        { x: x2 - nx * Math.max(0.5, w2 - k), y: y2 - ny * Math.max(0.5, w2 - k) },
+        { x: mx - nx * Math.max(0.5, mw - k * 0.5), y: my - ny * Math.max(0.5, mw - k * 0.5) },
+        { x: x1 - nx * Math.max(0.5, w1 - k), y: y1 - ny * Math.max(0.5, w1 - k) },
+      ]);
+      g.fillStyle(dark, 0.97).fillPoints(poly(0), true);
+      g.fillStyle(bone, 0.96).fillPoints(poly(3.5), true);
+      g.fillStyle(dark, 0.97).fillCircle(x1, y1, w1);
+      g.fillStyle(bone, 0.97).fillCircle(x1, y1, Math.max(1, w1 - 3));
+      g.fillStyle(dark, 0.97).fillCircle(x2, y2, w2);
+      g.fillStyle(bone, 0.97).fillCircle(x2, y2, Math.max(1, w2 - 2.5));
+    }
+
+    // 一根手指：三节指骨，curl 控制蜷曲（张开 0，抓住 1）
+    drawFinger(g, x, y, angle, len, curl, dark, bone) {
+      let px = x, py = y, a = angle;
+      for (let i = 0; i < 3; i += 1) {
+        const L = len * (0.46 - i * 0.08);
+        a += curl * 0.62;
+        const qx = px + Math.cos(a) * L, qy = py + Math.sin(a) * L;
+        const w = 8.5 - i * 2.1;
+        this.drawBone(g, px, py, qx, qy, w, Math.max(2, w - 1.6), dark, bone);
+        px = qx; py = qy;
+      }
+    }
+
+    // 一整只骷髅手：梯形掌骨 + 四指 + 拇指
+    drawSkeletalHand(g, cx, cy, side, scale, curl, dark, bone, fiery) {
+      const dx = side > 0 ? 1 : -1;
+      const pw = 23 * scale;
+      // 掌骨板
+      g.fillStyle(dark, 0.97).fillPoints([
+        { x: cx - dx * 17 * scale, y: cy - pw * 0.70 },
+        { x: cx + dx * 13 * scale, y: cy - pw * 0.98 },
+        { x: cx + dx * 13 * scale, y: cy + pw * 0.98 },
+        { x: cx - dx * 17 * scale, y: cy + pw * 0.70 },
+      ], true);
+      g.fillStyle(bone, 0.96).fillPoints([
+        { x: cx - dx * 16 * scale, y: cy - pw * 0.50 },
+        { x: cx + dx * 12 * scale, y: cy - pw * 0.74 },
+        { x: cx + dx * 12 * scale, y: cy + pw * 0.74 },
+        { x: cx - dx * 16 * scale, y: cy + pw * 0.50 },
+      ], true);
+      // 四指
+      const base = side > 0 ? 0 : Math.PI;
+      for (let i = 0; i < 4; i += 1) {
+        const a = base + (i - 1.5) * 0.30;
+        const len = (35 - Math.abs(i - 1.5) * 5) * scale;
+        this.drawFinger(g, cx + dx * 12 * scale, cy + (i - 1.5) * pw * 0.48, a, len, curl, dark, bone);
+      }
+      // 拇指：从掌根斜着伸出去
+      this.drawFinger(g, cx - dx * 7 * scale, cy + pw * 0.80, base + (side > 0 ? 1.2 : -1.2),
+        29 * scale, curl, dark, bone);
+      if (fiery) {
+        const fl = 0.8 + Math.sin(this.elapsed * 12) * 0.2;
+        g.fillStyle(0xff4d14, 0.26 * fl).fillCircle(cx, cy, 24 * scale);
+        g.fillStyle(0xffd27a, 0.55 * fl).fillCircle(cx, cy, 9 * scale);
+      }
+    }
+
+    // 整条骨臂：肩窝 -> 上臂 -> 肘 -> 前臂 -> 手
+    drawArm(g, ax, ay, tipX, tipY, side, scale, curl, dark, bone, fiery) {
+      const midX = (ax + tipX) / 2 + side * 14 * scale;
+      const midY = Math.min(ay, tipY) - 20 * scale;
+      // 肩窝
+      g.fillStyle(dark, 0.97).fillCircle(ax, ay, 15 * scale);
+      g.fillStyle(bone, 0.97).fillCircle(ax, ay, 11 * scale);
+      g.fillStyle(dark, 0.97).fillCircle(ax, ay, 5 * scale);
+      // 上臂 / 前臂：上臂更粗
+      this.drawBone(g, ax, ay, midX, midY, 13 * scale, 10 * scale, dark, bone);
+      this.drawBone(g, midX, midY, tipX, tipY, 10 * scale, 7.5 * scale, dark, bone);
+      this.drawSkeletalHand(g, tipX, tipY, side, scale, curl, dark, bone, fiery);
+      if (fiery) {
+        g.fillStyle(0xff5a1e, 0.16).fillCircle(midX, midY, 16 * scale);
+      }
+    }
+
+    // B 活着的时候：念咒召唤一条骨臂从身体里窜出去抓人
+    castHand() {
+      const b = this.boss;
+      const hx = this.boss.handX ?? this.player.x;
+      this.makeHand(1, HAND_TRAP_HP);
+      this.boss.hand.targetX = hx;
+      this.playSfx('sfx_rune_burst', 0.34);
+      this.cameras.main.shake(260, 0.007);
+      this.spawnBurst(this.handAnchorX(1), FLOOR - 250, 0xe4dcee, 26);
+      this.boss.hand.curl = 0;
+      this.boss.hand.curlTarget = 0;
+      this.boss.hand.checked = false;
+      this.boss.hand.reachable = true;   // 召唤版的目标点已经预判过，正常判定
+      // ③ 抓取与拍地交替：巨手不只会抓，也会砸
+      b.handCastCount = (b.handCastCount || 0) + 1;
+      if (b.handCastCount % 2 === 0) {
+        this.boss.hand.slam = true;
+        this.setMessage('骸骨巨手高高抬起——它要拍下来了。');
+      } else {
+        this.setMessage('骸骨巨手張著手指從它身上伸出來——離開那條軌跡。');
+      }
+    }
+
+    // ③ 召唤形态的拍地：抬手 -> 砸下（和燃烧形态共用同一套冲击反馈）
+    slamImpact(hx) {
+      this.cameras.main.shake(560, 0.017);
+      this.cameras.main.flash(130, 255, 230, 190);
+      this.playSfx('sfx_boss_death', 0.3);
+      for (let i = 0; i < 3; i += 1) {
+        const ring = this.add.circle(hx, FLOOR - 6, 130, 0x000000, 0)
+          .setStrokeStyle(7, 0xe8e0f0, 0.9).setDepth(20).setScale(0.15);
+        this.tweens.add({ targets: ring, scale: 1 + i * 0.3, alpha: 0,
+          duration: 460 + i * 90, onComplete: () => ring.destroy() });
+      }
+      for (let i = 0; i < 22; i += 1) {
+        const dust = this.add.circle(hx + (Math.random() - 0.5) * 120, FLOOR - 8,
+          2 + Math.random() * 4, Math.random() < 0.5 ? 0xd8cfe0 : 0x9a8fa8, 0.9).setDepth(21);
+        this.tweens.add({ targets: dust, y: dust.y - 40 - Math.random() * 70,
+          x: dust.x + (Math.random() - 0.5) * 90, alpha: 0, scale: 0.3,
+          duration: 420 + Math.random() * 320, onComplete: () => dust.destroy() });
+      }
+      this.spawnBurst(hx, FLOOR - 20, 0xd8cfe0, 40);
+      this.spawnEmber(hx, 62);
+      const inZone = Math.abs(this.player.x - hx) <= 104;
+      if (inZone && this.isPlayerGrounded()) {
+        this.resolveIncoming({ source: '骸骨巨手拍擊', damage: 30, attackerX: hx, range: 106, guardable: false, parryable: false });
+      } else {
+        this.stats.bossWhiffs += 1;
+        this.setMessage('巨手拍空——跳起來或跑出圈都行。');
+      }
+    }
+
+    // C 燃烧形态：两条骨臂锤击
+    castHandSlam() {
+      const h = this.boss.hand;
+      if (!h || h.destroyed) return;
+      h.state = 'slamUp';
+      h.targetX = this.boss.handX ?? this.player.x;
+      h.curlTarget = 0.35;              // 抬起来的时候手半张着
+      this.playSfx('sfx_rune_burst', 0.42);
+      this.setMessage('巨手高高舉起——要砸下來了。');
+      // 抬手要慢，玩家才读得出来；原来 240ms 一晃就过去
+      this.time.delayedCall(500, () => {
+        if (!this.boss.hand || this.boss.hand.destroyed) return;
+        const hx = this.boss.hand.targetX;
+        const h2 = this.boss.hand;
+        h2.state = 'slamDown';
+        h2.curlTarget = 1;
+        this.cameras.main.shake(620, 0.019);
+        this.cameras.main.flash(150, 255, 230, 190);
+        this.playSfx('sfx_boss_death', 0.34);
+        // 三圈扩散尘环 + 碎屑往上炸
+        for (let i = 0; i < 3; i += 1) {
+          const ring = this.add.circle(hx, FLOOR - 6, 130, 0x000000, 0)
+            .setStrokeStyle(7, 0xe8e0f0, 0.9).setDepth(20).setScale(0.15);
+          this.tweens.add({ targets: ring, scale: 1 + i * 0.3, alpha: 0,
+            duration: 460 + i * 90, onComplete: () => ring.destroy() });
+        }
+        for (let i = 0; i < 26; i += 1) {
+          const dust = this.add.circle(hx + (Math.random() - 0.5) * 120, FLOOR - 8,
+            2 + Math.random() * 4, Math.random() < 0.5 ? 0xd8cfe0 : 0x9a8fa8, 0.9).setDepth(21);
+          this.tweens.add({ targets: dust, y: dust.y - 40 - Math.random() * 70,
+            x: dust.x + (Math.random() - 0.5) * 90, alpha: 0, scale: 0.3,
+            duration: 420 + Math.random() * 320, onComplete: () => dust.destroy() });
+        }
+        this.spawnBurst(hx, FLOOR - 20, 0xd8cfe0, 44);
+        this.spawnBurst(hx, FLOOR - 40, 0xff8a3a, 34);
+        this.spawnEmber(hx, 62);
+        this.eruptColumn(hx - 74);
+        this.eruptColumn(hx + 74);
+        const inZone = Math.abs(this.player.x - hx) <= 104;
+        if (inZone && this.isPlayerGrounded()) {
+          this.resolveIncoming({ source: '巨手錘擊', damage: this.bossMoves().handSlam.damage, attackerX: hx, range: 106, guardable: false, parryable: false });
+        } else {
+          this.stats.bossWhiffs += 1;
+          this.setMessage('巨手錘擊落空——跳起來或跑出圈都行。');
+        }
+        this.time.delayedCall(420, () => {
+          if (!this.boss.hand || this.boss.hand.destroyed) return;
+          this.boss.hand.state = 'idle';
+          this.boss.hand.curlTarget = 0;
+        });
+      });
+    }
+
+    // C 燃烧形态：两条骨臂抓取
+    castHandGrab() {
+      const h = this.boss.hand;
+      if (!h || h.destroyed) return;
+      const dir = this.boss.facing;
+      const px = this.player.x - this.bossSprite.x;
+      const inPath = dir > 0 ? (px >= 0 && px <= HAND_REACH) : (px <= 0 && -px <= HAND_REACH);
+      // 也走「张开伸手 -> 攥紧」的过程，而不是瞬间锁住
+      h.state = 'grabOut';
+      // ① 关键修复：不在伸手范围内就只伸到最大射程，并且标记为「抓不到」。
+      // 原来无条件锁定玩家位置，手会一路伸到人身上，多远都能抓。
+      h.reachable = inPath;
+      h.targetX = inPath ? this.player.x : this.bossSprite.x + dir * HAND_REACH;
+      h.ext = 0;
+      h.curl = 0;
+      h.curlTarget = 0;
+      h.checked = false;
+      h.grabPending = 0;
+      this.playSfx('sfx_boss_tell', 0.46);
+      if (!inPath) this.setMessage('巨手伸出去了，但你不在它的路徑上。');
+    }
+
+    beginGrab(x, attached) {
+      const p = this.playerState;
+      const b = this.boss;
+      if (!b.hand || b.hand.destroyed) return;
+      p.grabbed = { timer: 3.2, x, attached };
+      b.hand.curlTarget = 1;        // 手指攥紧
+      b.hand.grabPending = 0;
+      p.attack = null;
+      p.dodgeTimer = 0;
+      this.player.body.setVelocity(0, 0);
+      this.cameras.main.shake(240, 0.007);
+      this.playSfx('sfx_boss_hurt', 0.4);
+      this.setMessage('被骸骨巨手抓住了！按 J 一直打，把手打碎才能脱身。');
+      this.stats.hitsTaken += 1;
+    }
+
+    releaseGrab(thrown) {
+      const p = this.playerState;
+      if (!p.grabbed) return;
+      const x = p.grabbed.x;
+      p.grabbed = null;
+      if (this.boss.hand) { this.boss.hand.curlTarget = 0; this.boss.hand.checked = true; }
+      p.invuln = Math.max(p.invuln, 0.7);
+      p.invulnSource = 'grab-release';
+      if (thrown) {
+        this.playerDamage('骸骨巨手', 32);
+        this.player.x = clamp(x + (this.bossSprite.x > x ? -120 : 120), 52, this.arenaMaxX());
+      }
+    }
+
+    damageHand(amount) {
+      const h = this.boss.hand;
+      if (!h || h.destroyed) return;
+      h.hp = Math.max(0, h.hp - amount);
+      const tip = this.handTip(h, 1);
+      this.floatText(tip.x, tip.y - 40, `-${amount}`, '#f6d79f');
+      if (h.hp <= 0) this.destroyHand();
+    }
+
+    destroyHand() {
+      const h = this.boss.hand;
+      if (!h || h.destroyed) return;
+      h.destroyed = true;
+      h.hp = 0;
+      const bx = this.bossSprite.x;
+      // 被打碎就散成骨屑消失，不能留在原地
+      for (const side of (h.attached ? [-1, 1] : [1])) {
+        this.spawnBurst(bx + side * 62, FLOOR - 150, 0xe6dcf0, 40);
+        this.spawnBurst(bx + side * 62, FLOOR - 150, 0xffd27a, 22);
+      }
+      this.cameras.main.shake(340, 0.009);
+      this.playSfx('sfx_boss_death', 0.42);
+      this.releaseGrab(false);
+      this.boss.hand = null;
+      if (this.handGfx) this.handGfx.clear();
+      if (this.handSprites) {
+        for (const k of Object.keys(this.handSprites)) {
+          if (this.handSprites[k]) this.handSprites[k].destroy();
+        }
+        this.handSprites = null;
+      }
+      if (h.attached) {
+        this.boss.handGone = true;
+        this.setMessage('兩隻骸骨巨手都被打碎了——它們不會再長出來，巫妖失去了錘擊與抓取。');
+      } else {
+        this.setMessage('你打碎了骸骨巨手，從抓取中掙脫。');
+      }
+    }
+
+    updateHand(dt) {
+      const b = this.boss;
+      const p = this.playerState;
+      const h = b.hand;
+      if (!h || h.destroyed) return;
+      h.t += dt;
+
+      // 手指平滑开合。攥紧比张开慢，才有"夹住"的重量感——
+      // 原来 curl 是 0/1 瞬切，过程完全看不见。
+      const ct = h.curlTarget || 0;
+      if (Math.abs(h.curl - ct) > 0.002) {
+        const rate = ct > h.curl ? 4.2 : 6.5;
+        const step = Math.min(Math.abs(ct - h.curl), rate * dt);
+        h.curl += Math.sign(ct - h.curl) * step;
+      }
+
+      // ③ 拍地版：抬手半秒 -> 砸下
+      if (h.slam && h.state === 'grabOut' && !h.slamFired) {
+        h.curlTarget = 0.35;
+        h.state = 'slamUp';
+      }
+      if (h.slam && h.state === 'slamUp' && h.t > 0.5) {
+        h.slamFired = true;
+        h.state = 'slamDown';
+        h.curlTarget = 1;
+        this.slamImpact(this.handTip(h, 1).x);
+        this.time.delayedCall(360, () => { if (b.hand) b.hand.state = 'retract'; });
+      }
+      if (h.state === 'retract') {
+        h.ext = Math.max(0, h.ext - dt * 4.2);
+        h.curlTarget = 0;
+        if (h.ext <= 0 && !h.attached) {
+          b.hand = null;
+          this.hideHandSprites();
+          if (this.handGfx) this.handGfx.clear();
+          return;
+        }
+      }
+      if (h.slam && h.state !== 'grabOut') return;
+      // 伸爪：张开 -> 伸出去 -> 碰到就攥（攥到底才真正锁住玩家）
+      if (h.state === 'grabOut' && !p.grabbed && !h.checked) {
+        h.curlTarget = 0;
+        h.ext = Math.min(1, h.ext + dt * 3.4);
+        if (h.ext >= 0.99) {
+          h.checked = true;
+          const tip = this.handTip(h, 1);
+          // ① h.reachable === false 表示「这一次本来就够不着」，不做抓取判定
+          const reachable = h.reachable === false ? false
+            : h.attached
+              ? Math.abs(this.player.x - tip.x) < HAND_GRAB_R && p.invuln <= 0
+              : Math.abs(this.player.x - tip.x) < HAND_GRAB_R && this.isPlayerGrounded() && p.invuln <= 0;
+          if (reachable) {
+            h.curlTarget = 1;
+            h.grabPending = 0.22;      // 攥到底需要的时间
+            h.grabX = tip.x;
+            this.playSfx('sfx_boss_tell', 0.4);
+          } else {
+            h.curlTarget = 0;
+            this.setMessage(h.attached ? '巨手抓空——你不在它的路徑上。' : '骸骨巨手抓空了——你離開了它的伸爪軌跡。');
+          }
+        }
+      }
+
+      // 攥到底 -> 真正抓住
+      if (h.grabPending > 0) {
+        h.grabPending -= dt;
+        if (h.grabPending <= 0 && !p.grabbed) {
+          h.grabPending = 0;
+          this.beginGrab(h.grabX, h.attached);
+        }
+      }
+
+      if (h.attached) {
+        // 附身巨手：常驻，抓住时把玩家钉在手上
+        if (p.grabbed) p.grabbed.x = this.bossSprite.x + b.facing * 96;
+      } else if (!p.grabbed) {
+        // 召唤版：伸完 -> 张开手 -> 缩回去 -> 直接移除
+        if (h.state === 'grabOut' && h.t > 1.05) { h.state = 'retract'; h.curlTarget = 0; }
+        if (h.state === 'retract') {
+          h.ext = Math.max(0, h.ext - dt * 4.2);
+          if (h.ext <= 0) {
+            b.hand = null;
+            this.hideHandSprites();
+            if (this.handGfx) this.handGfx.clear();
+            return;
+          }
+        }
+      }
+
+      if (!p.grabbed) return;
+      p.grabbed.timer -= dt;
+      if (p.grabbed.timer <= 0) this.releaseGrab(true);
+    }
+
+    drawHand() {
+      const h = this.boss.hand;
+      if (!h || h.destroyed) { this.hideHandSprites(); return; }
+      if (!this.handSprites) this.handSprites = {};
+      // 按 curl 选帧：0~1 映射到 4 帧，手指合拢的过程就是连续的
+      const lvl = Math.max(0, Math.min(3, Math.floor((h.curl || 0) * 3.999)));
+      const key = `hand_c${lvl}`;
+      const sides = h.attached ? [-1, 1] : [1];
+      const ARM_PX = 431;                 // 图内肩窝到指尖的长度
+      const ORIGIN_X = 34 / 470;
+      const ORIGIN_Y = 66 / 190;
+      for (const side of sides) {
+        const ax = this.handAnchorX(side);
+        const ay = FLOOR - 250;
+        const tip = this.handTip(h, side);
+        const dist = Math.hypot(tip.x - ax, tip.y - ay);
+        const sp = this.handSprites[side] || this.add.sprite(ax, ay, key).setDepth(17);
+        this.handSprites[side] = sp;
+        // 必须显式设回可见：hideHandSprites 会把所有手设成不可见，
+        // 而复用旧精灵时如果不恢复，P5 就会只显示一只手
+        sp.setVisible(true);
+        sp.setTexture(key);
+        sp.setOrigin(ORIGIN_X, ORIGIN_Y);
+        sp.setPosition(ax, ay);
+        sp.setRotation(Math.atan2(tip.y - ay, tip.x - ax));
+        // 转到角度后再上下翻转 = 水平镜像，左手才不会倒过来
+        sp.setFlipY(side < 0);
+        // 长度按实际距离缩放：手精确落在目标点，伸爪时整条臂变长
+        sp.setScale(Math.max(0.30, Math.min(1.15, dist / ARM_PX)));
+        // 燃烧形态偏暖色
+        if (h.attached) sp.setTint(0xffe0c0); else sp.clearTint();
+      }
+      // 不再需要的另一侧要藏起来
+      if (!h.attached && this.handSprites[-1]) {
+        this.handSprites[-1].setVisible(false);
+      } else if (h.attached && this.handSprites[-1]) {
+        this.handSprites[-1].setVisible(true);
+      }
+    }
+
+    hideHandSprites() {
+      if (!this.handSprites) return;
+      for (const k of Object.keys(this.handSprites)) {
+        if (this.handSprites[k]) this.handSprites[k].setVisible(false);
+      }
+    }
+
+    // E 祈祷术：跪地回血，但期间完全不能动，被打断就白读
+    pray() {
+      const p = this.playerState;
+      if (this.status !== 'run') return;
+      if (p.grabbed) { this.setMessage('被抓住了，先打碎巨手！'); return; }
+      if (p.prayTimer > 0) return;
+      if (p.prayCooldown > 0) { this.setMessage(`祈禱術冷卻中：${p.prayCooldown.toFixed(1)} 秒。`); return; }
+      if (p.hp >= (p.maxHp || 100)) { this.setMessage('生命已滿，不需要祈禱。'); return; }
+      if (!this.isPlayerGrounded()) return;
+      if (p.guardBreak > 0 || p.attack || p.dodgeTimer > 0 || p.ultimateTimer > 0 || p.hurtTimer > 0) return;
+      p.prayTimer = PRAY_DURATION;
+      p.prayCooldown = PRAY_COOLDOWN;
+      p.attack = null;
+      this.player.play('hero-idle', true);
+      this.playSfx('sfx_rune_mark', 0.34);
+      this.setMessage('祈禱中：不能移動與攻擊，被打到就會中斷。');
+    }
+
+    updatePray(dt) {
+      const p = this.playerState;
+      if (p.prayTimer <= 0) return;
+      p.prayTimer -= dt;
+      p.hp = Math.min(p.maxHp || 100, p.hp + (PRAY_HEAL / PRAY_DURATION) * dt);
+      if (Math.random() < 0.4) {
+        const dot = this.add.circle(this.player.x + (Math.random() - 0.5) * 46, FLOOR - 20, 2.4, 0xffe9a8, 0.95).setDepth(22);
+        this.tweens.add({ targets: dot, y: dot.y - 80 - Math.random() * 40, alpha: 0, duration: 620, onComplete: () => dot.destroy() });
+      }
+      if (p.prayTimer <= 0) {
+        this.playSfx('sfx-parry', 0.26);
+        this.setMessage('祈禱完成：生命回復。');
+      }
+    }
+
+    drawPray() {
+      if (!this.prayGfx) this.prayGfx = this.add.graphics().setDepth(21);
+      const g = this.prayGfx;
+      g.clear();
+      const p = this.playerState;
+      if (p.prayTimer > 0) {
+        const k = 1 - p.prayTimer / PRAY_DURATION;
+        g.fillStyle(0xffe9a8, 0.15).fillCircle(this.player.x, FLOOR - 6, 52 + k * 20);
+        g.lineStyle(3, 0xffd76a, 0.9).strokeCircle(this.player.x, FLOOR - 6, 52 + k * 20);
+        g.lineStyle(2, 0xfff6dc, 0.75).strokeCircle(this.player.x, FLOOR - 6, 32 + k * 12);
+      }
+      if (this.prayLabel) {
+        this.prayLabel.setText(p.prayTimer > 0 ? '祈禱中…'
+          : p.prayCooldown > 0 ? `祈禱 R · ${Math.ceil(p.prayCooldown)}s` : '祈禱 R · 就緒');
+        this.prayLabel.setColor(p.prayTimer > 0 ? '#ffe9a8' : p.prayCooldown > 0 ? '#7f8a9e' : '#b9e8c0');
+      }
+    }
+
+    // ==================== 环伺 / 乱舞 / 精英特效 ====================
+    // ③ 魂火环伺（精英版是影刃环伺）：火球绕身旋转，接触灼伤，并定期朝玩家发射。
+    // 这是"环绕身子的法术"。
+    castOrbit() {
+      const b = this.boss;
+      const rift = b.encounter === 'rift';
+      const count = rift ? (b.phase === 5 ? 6 : 4) : 4;
+      b.orbs = [];
+      for (let i = 0; i < count; i += 1) {
+        b.orbs.push({
+          a: i * (Math.PI * 2 / count),
+          r: rift ? 132 : 112,
+          spd: (rift ? 1.55 : 1.95) * (i % 2 ? 1 : -1),
+          fireT: 0.7 + i * 0.30,
+          x: this.bossSprite.x,
+          y: FLOOR - 210,
+        });
+      }
+      this.playSfx('sfx_boss_phase', 0.34);
+      this.setMessage(rift
+        ? '魂火環伺：火球繞著它轉，碰到會被灼傷，也會朝你發射——先離開圈。'
+        : '影刃環伺：刃在它身邊轉，別站在圈上。');
+    }
+
+    updateOrbs(dt) {
+      const b = this.boss;
+      if (!b.orbs || !b.orbs.length) return;
+      if (b.mode !== 'active') { b.orbs = null; return; }
+      const rift = b.encounter === 'rift';
+      // 圆心下移到身体中心，半径加大，整圆才能扫到地面
+      const cx = this.bossSprite.x;
+      const cy = FLOOR - 168;
+      for (const o of b.orbs) {
+        o.a += o.spd * dt;
+        // 原来竖直方向压扁成 0.42，鬼火一直飘在身体上方，根本烧不到地面的主角。
+        // 改成整圆 360 度环绕，会扫到玩家高度，必须靠跳跃或走位躲。
+        o.x = cx + Math.cos(o.a) * o.r;
+        o.y = cy + Math.sin(o.a) * o.r;
+        o.fireT -= dt;
+        if (o.fireT <= 0) {
+          o.fireT = rift ? 1.35 : 1.1;
+          const dir = Math.sign(this.player.x - o.x) || -1;
+          this.spawnProjectile(o.x, o.y, dir, rift ? 340 : 300, rift ? 11 : 13, rift ? '魂火環伺' : '影刃環伺');
+        }
+        // 接触伤害：改成真正的二维距离判定，配合 360 度环绕
+        const near = Math.hypot(this.player.x - o.x, (this.player.y - 34) - o.y) < 46;
+        if (near && this.playerState.invuln <= 0 && this.playerState.hurtTimer <= 0) {
+          this.floatText(this.player.x, this.player.y - 120, '灼傷', '#ff9a5c');
+          this.playerDamage(rift ? '魂火環伺' : '影刃環伺', rift ? 9 : 11);
+        }
+      }
+    }
+
+    drawOrbs() {
+      if (!this.orbGfx) this.orbGfx = this.add.graphics().setDepth(23);
+      const g = this.orbGfx;
+      g.clear();
+      const b = this.boss;
+      if (!b.orbs || !b.orbs.length) return;
+      const rift = b.encounter === 'rift';
+      const t = this.elapsed;
+      for (const o of b.orbs) {
+        const pulse = 0.9 + Math.sin(t * 9 + o.a) * 0.12;
+        if (rift) {
+          g.fillStyle(0xff4d14, 0.22).fillCircle(o.x, o.y, 30 * pulse);
+          g.fillStyle(0xffb45c, 0.55).fillCircle(o.x, o.y, 18 * pulse);
+          g.fillStyle(0xfff6dc, 0.95).fillCircle(o.x, o.y, 8);
+          g.lineStyle(2, 0xffd27a, 0.6).strokeCircle(o.x, o.y, 26 * pulse);
+        } else {
+          g.fillStyle(0x2b1a44, 0.85).fillCircle(o.x, o.y, 17 * pulse);
+          g.fillStyle(0xc98aff, 0.9).fillCircle(o.x, o.y, 9);
+          g.lineStyle(3, 0xead4ff, 0.8).lineBetween(o.x - 20, o.y, o.x + 20, o.y);
+          g.lineStyle(2, 0xb98cff, 0.7).strokeCircle(o.x, o.y, 24 * pulse);
+        }
+      }
+    }
+
+    // ② 精英的技能特效。原来精英一招一式只有地面预警线，打完什么都没有，
+    // 手感像在打木桩——这是"太垃圾"的一半原因。
+    spawnEliteMoveFx(move) {
+      const x = this.bossSprite.x;
+      const y = FLOOR - 150;
+      const fx = (anim, tex, sx, sy, sc, dp) => this.spawnFx(anim, tex, sx, sy, sc, dp);
+      if (move === 'slash') {
+        fx('fx-rift', 'fx_rift', x + this.boss.facing * 70, FLOOR - 110, 1.15, 9);
+        this.spawnBurst(x + this.boss.facing * 80, FLOOR - 120, 0xc9a0ff, 26);
+        this.cameras.main.shake(140, 0.005);
+      } else if (move === 'rush') {
+        fx('fx-soulburst', 'fx_soulburst', x, FLOOR - 26, 1.5, 9);
+        this.spawnBurst(x, y, 0xb98cff, 30);
+      } else if (move === 'wave') {
+        fx('fx-rune-burst', 'fx_rune', x, FLOOR - 30, 1.1, 6);
+        this.spawnBurst(x, FLOOR - 24, 0xc98aff, 24);
+      } else if (move === 'shot') {
+        this.spawnBurst(x + this.boss.facing * 60, FLOOR - 120, 0xd9b8ff, 16);
+      }
+    }
+
+    // ④ 焚身乱舞：先选好 4 个落点
+    castBlitz() {
+      const b = this.boss;
+      b.blitzSpots = [];
+      for (let i = 0; i < 4; i += 1) b.blitzSpots.push(130 + Math.random() * 700);
+      b.blitzIdx = 0;
+      b.blitzT = 0;
+      this.playSfx('sfx_boss_tell', 0.45);
+      this.cameras.main.shake(260, 0.007);
+      this.setMessage('焚身亂舞：它開始在場上亂竄——每一段落點都會燒起來。');
     }
 
     // ==================== 烈焰残渣 / 焚天 / 裂隙牵引 ====================
@@ -2325,6 +3380,93 @@
       this.spawnEmber(x, 96);
     }
 
+    // 隕石雨：火球沿一个方向一颗接一颗砸下来
+    castDash() {
+      const b = this.boss;
+      // 朝玩家那一侧冲，冲之前先定好方向（这样玩家能靠走位骗反方向）
+      b.dashDir = Math.sign(this.player.x - this.bossSprite.x) || b.facing;
+      b.facing = b.dashDir;
+      b.dashTrailT = 0;
+      this.playSfx('sfx_boss_tell', 0.5);
+      this.cameras.main.shake(300, 0.008);
+      this.setMessage('焚身衝刺：它要貼地衝過來了——跳起來或往側面閃。');
+    }
+
+    castMeteorRain() {
+      const b = this.boss;
+      const dir = b.facing;
+      this.meteorRain = {
+        t: 0,
+        dir,
+        spawned: 0,
+        count: 7,
+        startX: dir > 0 ? 30 : WORLD_W - 30,
+        step: 0.30,
+      };
+      this.playSfx('sfx_boss_tell', 0.5);
+      this.cameras.main.shake(260, 0.007);
+      this.setMessage('隕石雨：火球沿著一個方向一顆一顆砸下來——跟著節拍往反方向走。');
+    }
+
+    updateMeteorRain(dt) {
+      const r = this.meteorRain;
+      if (!r) return;
+      r.t += dt;
+      while (r.spawned < r.count && r.t >= r.spawned * r.step) {
+        const i = r.spawned;
+        r.spawned += 1;
+        const tx = r.startX + r.dir * (40 + i * 108);
+        if (tx < 40 || tx > this.arenaMaxX() - 8) continue;
+        this.spawnMeteor(tx);
+      }
+      if (r.spawned >= r.count && !this.meteorCount) this.meteorRain = null;
+    }
+
+    spawnMeteor(tx) {
+      const lean = 150;                       // 斜着砸下来
+      const dur = 640;
+      const sx = tx - lean;
+      const sy = -90;
+      const ey = FLOOR - 22;
+      this.meteorCount = (this.meteorCount || 0) + 1;
+      // 陨石本体：白热核心在"头"（图内偏下），所以原点压在 0.78 处，
+      // 再按下落方向旋转——头永远朝着落点。
+      const sp = this.add.sprite(sx, sy, 'fx_meteor', 0)
+        .setOrigin(0.5, 0.78).setDepth(24).setScale(0.92).play('fx-meteor');
+      sp.anims.timeScale = 1.5;
+      sp.setRotation(Math.atan2(ey - sy, tx - sx) - Math.PI / 2);
+      // 地面落点圈：和判定范围一致，玩家看到多少就是多少
+      const mark = this.add.circle(tx, FLOOR - 4, 62, 0xff4d14, 0.16)
+        .setStrokeStyle(4, 0xff8a3a, 0.9).setDepth(20);
+      // 落地前把落点圈“收紧”，读起来像倒计时
+      this.tweens.add({ targets: mark, scale: 0.82, duration: dur, ease: 'Quad.In' });
+      this.tweens.add({
+        targets: [sp], x: tx, y: ey, duration: dur, ease: 'Quad.In',
+        onComplete: () => {
+          sp.destroy(); mark.destroy();
+          this.meteorCount = Math.max(0, this.meteorCount - 1);
+          this.meteorImpact(tx);
+        },
+      });
+    }
+
+    meteorImpact(tx) {
+      this.cameras.main.shake(170, 0.005);
+      this.playSfx('sfx_hit_flesh', 0.24);
+      // 落地火环序列帧
+      const boom = this.add.sprite(tx, FLOOR - 42, 'fx_meteor_impact', 0)
+        .setDepth(25).setScale(0.7).play('fx-meteor-impact');
+      boom.once('animationcomplete', () => boom.destroy());
+      const boom2 = this.add.sprite(tx, FLOOR - 90, 'fx_meteor_impact', 0)
+        .setDepth(25).setScale(0.42).play('fx-meteor-impact');
+      boom2.once('animationcomplete', () => boom2.destroy());
+      this.spawnBurst(tx, FLOOR - 24, 0xffd27a, 20);
+      this.spawnBurst(tx, FLOOR - 46, 0xff5a1e, 14);
+      if (Math.abs(this.player.x - tx) <= 62 && this.isPlayerGrounded()) {
+        this.playerDamage('隕石雨', this.bossMoves().meteor.damage);
+      }
+    }
+
     // ② 焚天：全屏只有一处安全口
     castSkyBurn() {
       const zones = this.boss.burnZones || [];
@@ -2336,7 +3478,7 @@
       for (const z of zones) {
         if (z.safe) continue;
         this.eruptColumn(z.x);
-        if (Math.abs(this.player.x - z.x) < 96) hit = z;
+        if (Math.abs(this.player.x - z.x) < 70) hit = z;
       }
       const safe = zones.find((z) => z.safe);
       if (safe) {
@@ -2346,6 +3488,7 @@
       if (hit) this.playerDamage('焚天', this.bossMoves().burn.damage);
       this.setMessage('焚天：地面被烧穿，只剩一处没被点燃。');
       this.boss.burnZones = null;
+      this.emberAccum = 0;
     }
 
     // ④ 裂隙牵引
@@ -2356,8 +3499,50 @@
     }
 
     // ⑥ 残血红色暗角：越接近死亡，屏幕边缘越红、越随心跳脉动
+    // ② 10000 血承伤测试：关掉无敌，改成高血量，伤害正常结算
+    toggleTestHp() {
+      if (!this.debugMode) return;
+      this.testHpMode = !this.testHpMode;
+      const p = this.playerState;
+      if (this.testHpMode) {
+        this.godMode = false;
+        if (this.debugConfig) this.debugConfig.godMode = false;
+        p.maxHp = 10000;
+        p.hp = 10000;
+        this.stats.damageBySource = {};
+        this.stats.damageTaken = 0;
+        this.stats.hitsTaken = 0;
+        this.setMessage('【血量測試】生命 10000，會正常承受傷害——站著量每一招打多少。');
+      } else {
+        p.maxHp = 100;
+        p.hp = 100;
+        this.setMessage('【血量測試】關閉，回復正常生命。');
+      }
+    }
+
+    // 策划模式面板：按键表 + 故事标记 + 实时承伤统计
+    drawDebugPanel() {
+      if (!this.debugMode) { if (this.debugPanel) this.debugPanel.setVisible(false); return; }
+      if (!this.debugPanel) {
+        this.debugPanel = this.add.text(10, 92, '', {
+          fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '11px',
+          color: '#9fe8c0', lineSpacing: 5,
+        }).setDepth(33).setScrollFactor(0);
+      }
+      const rows = Object.entries(this.stats.damageBySource || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k} ${v}`).join('　');
+      this.debugPanel.setText([
+        this.boss.revived
+          ? '策劃測試　【1-2】火焰形態階段　【Q】能量　【H】回滿血　【P】暫停'
+          : '策劃測試　【1-4】巫妖階段　【Q】能量　【H】回滿血　【P】暫停',
+        `【B】血量測試 ${this.testHpMode ? '開(10000血)' : '關'}`,
+        `累計承傷 ${this.stats.damageTaken}　受擊 ${this.stats.hitsTaken} 次　各招式：${rows || '（尚未受擊）'}`,
+      ]).setVisible(true);
+    }
+
     drawVignette() {
-      if (!this.vigGfx) this.vigGfx = this.add.graphics().setDepth(47);
+      if (!this.vigGfx) this.vigGfx = this.add.graphics().setDepth(47).setScrollFactor(0);
       const g = this.vigGfx;
       g.clear();
       const p = this.playerState;
@@ -2381,6 +3566,8 @@
       this.dialogueActive = true;
       this.dialogueShown = 0;
       this.dialogueAccum = 0;
+      // 压暗场景：玩法已经完全冻结了，但画面不暗下来玩家会以为游戏还在跑
+      this.dimScreen(0.34, 180);
       this.buildDialoguePanel();
       this.showDialogueLine();
     }
@@ -2389,17 +3576,17 @@
       if (this.dlgGfx) return;
       const font = 'Segoe UI, Microsoft YaHei, sans-serif';
       const px = 36, ph = 126, pw = WIDTH - px * 2, py = HEIGHT - ph - 22;
-      this.dlgGfx = this.add.graphics().setDepth(60);
+      this.dlgGfx = this.add.graphics().setDepth(60).setScrollFactor(0);
       this.dlgGfx.fillStyle(0x0a0c13, 0.92).fillRoundedRect(px, py, pw, ph, 12);
       this.dlgGfx.lineStyle(2, 0x6a5a8a, 0.85).strokeRoundedRect(px, py, pw, ph, 12);
       this.dlgGfx.fillStyle(0x151a26, 1).fillRoundedRect(px + 14, py + 14, 84, 84, 10);
-      this.dlgPortrait = this.add.text(px + 56, py + 56, '', { fontFamily: font, fontSize: '38px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setDepth(62);
-      this.dlgName = this.add.text(px + 114, py + 16, '', { fontFamily: font, fontSize: '17px', fontStyle: 'bold', color: '#ffffff' }).setDepth(62);
-      this.dlgBody = this.add.text(px + 114, py + 46, '', { fontFamily: font, fontSize: '15px', color: '#dde5f4', lineSpacing: 7, wordWrap: { width: pw - 150 } }).setDepth(62);
-      this.dlgHint = this.add.text(px + pw - 16, py + ph - 24, '空格 / 点击 继续　·　Esc 跳過全部', { fontFamily: font, fontSize: '12px', color: '#8f9ab3' }).setOrigin(1, 0).setDepth(62);
+      this.dlgPortrait = this.add.text(px + 56, py + 56, '', { fontFamily: font, fontSize: '38px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setDepth(62).setScrollFactor(0);
+      this.dlgName = this.add.text(px + 114, py + 16, '', { fontFamily: font, fontSize: '17px', fontStyle: 'bold', color: '#ffffff' }).setDepth(62).setScrollFactor(0);
+      this.dlgBody = this.add.text(px + 114, py + 46, '', { fontFamily: font, fontSize: '15px', color: '#dde5f4', lineSpacing: 7, wordWrap: { width: pw - 150 } }).setDepth(62).setScrollFactor(0);
+      this.dlgHint = this.add.text(px + pw - 16, py + ph - 24, '空格 / 点击 继续　·　Esc 跳過全部', { fontFamily: font, fontSize: '12px', color: '#8f9ab3' }).setOrigin(1, 0).setDepth(62).setScrollFactor(0);
       // 右上角的跳过按钮：不想看剧情的玩家一键推完，而不是被按住看
       this.dlgSkip = this.add.text(px + pw - 16, py + 12, '跳過 ▸', { fontFamily: font, fontSize: '13px', color: '#c9b98f' })
-        .setOrigin(1, 0).setDepth(63).setInteractive({ useHandCursor: true });
+        .setOrigin(1, 0).setDepth(63).setScrollFactor(0).setInteractive({ useHandCursor: true });
       this.dlgSkip.on('pointerover', () => this.dlgSkip.setColor('#ffe9b0'));
       this.dlgSkip.on('pointerout', () => this.dlgSkip.setColor('#c9b98f'));
       this.dlgSkip.on('pointerdown', (pointer, lx, ly, event) => {
@@ -2414,15 +3601,24 @@
       const hex = '#' + line.color.toString(16).padStart(6, '0');
       this.dlgName.setText(line.who).setColor(hex);
       this.dlgPortrait.setText(line.who.slice(0, 1)).setColor(hex);
-      this.dlgBody.setText('');
       this.dialogueShown = 0;
       this.dialogueAccum = 0;
+      if (line.choices) {
+        // 等玩家选：直接把提示语整句显示出来，不走打字机
+        this.dlgBody.setText(line.text || '');
+        this.dialogueShown = (line.text || '').length;
+        this.buildChoicePanel(line);
+      } else {
+        this.clearChoicePanel();
+        this.dlgBody.setText('');
+      }
     }
 
     updateDialogue(dt) {
       if (!this.dialogueActive || !this.dlgBody) return;
       const line = this.dialogueQueue[0];
       if (!line) return;
+      if (line.choices) { this.dlgHint.setAlpha(0.4); return; }
       const full = line.text;
       if (this.dialogueShown < full.length) {
         this.dialogueAccum += dt;
@@ -2441,6 +3637,7 @@
       if (!this.dialogueActive) return;
       const line = this.dialogueQueue[0];
       if (!line) { this.endDialogue(); return; }
+      if (line.choices) return;   // 选项句必须点选，空格不能跳过
       // 还在打字：先补全整句，不急着翻页
       if (this.dialogueShown < line.text.length) {
         this.dialogueShown = line.text.length;
@@ -2456,9 +3653,11 @@
     endDialogue() {
       if (!this.dialogueActive) return;
       this.dialogueActive = false;
+      this.dimScreen(0, 180);
       const cb = this.dialogueOnDone;
       this.dialogueOnDone = null;
       this.dialogueQueue = [];
+      this.clearChoicePanel();
       for (const key of ['dlgGfx', 'dlgName', 'dlgBody', 'dlgPortrait', 'dlgHint', 'dlgSkip']) {
         if (this[key]) { this[key].destroy(); this[key] = null; }
       }
@@ -2487,6 +3686,51 @@
       return true;
     }
 
+    // ② 当前这句是不是等玩家选的句子
+    choiceActive() {
+      return !!(this.dialogueActive && this.dialogueQueue && this.dialogueQueue[0]
+        && this.dialogueQueue[0].choices);
+    }
+
+    buildChoicePanel(line) {
+      this.clearChoicePanel();
+      const font = 'Segoe UI, Microsoft YaHei, sans-serif';
+      const px = 36, ph = 126, py = HEIGHT - ph - 22;
+      this.choiceObjs = [];
+      line.choices.forEach((c, i) => {
+        const t = this.add.text(px + 116, py + 30 + i * 27, `${i + 1}. ${c.label}`, {
+          fontFamily: font, fontSize: '15px', color: '#ffe9b0',
+        }).setDepth(64).setScrollFactor(0).setInteractive({ useHandCursor: true });
+        t.on('pointerover', () => t.setColor('#ffffff'));
+        t.on('pointerout', () => t.setColor('#ffe9b0'));
+        t.on('pointerdown', (pointer, lx, ly, event) => {
+          if (event && event.stopPropagation) event.stopPropagation();
+          this.pickChoice(i);
+        });
+        this.choiceObjs.push(t);
+      });
+    }
+
+    clearChoicePanel() {
+      if (!this.choiceObjs) return;
+      for (const t of this.choiceObjs) if (t) t.destroy();
+      this.choiceObjs = null;
+    }
+
+    // ② 玩家选了一句台词：把该选项的回应接到队列前面
+    pickChoice(i) {
+      const line = this.dialogueQueue && this.dialogueQueue[0];
+      if (!line || !line.choices || !line.choices[i]) return;
+      const c = line.choices[i];
+      if (c.flag) this.storyFlag = c.flag;   // ④ 选择会影响后面的自爆难度与结局
+      this.clearChoicePanel();
+      this.playSfx('sfx-parry', 0.22);
+      this.dialogueQueue.shift();
+      if (c.reply && c.reply.length) this.dialogueQueue.unshift(...c.reply);
+      if (!this.dialogueQueue.length) { this.endDialogue(); return; }
+      this.showDialogueLine();
+    }
+
     // 一次性推完整段对话（对话框右上角的「跳過」，Esc 同效）
     skipAllDialogue() {
       if (!this.dialogueActive) return;
@@ -2494,10 +3738,55 @@
       this.endDialogue();
     }
 
+    // 被巨手抓住时的提示：全部画在玩家头顶，玩家不用移开视线
+    drawGrabUi() {
+      const p = this.playerState;
+      const grabbed = !!p.grabbed;
+      if (!grabbed) {
+        if (this.grabGfx) this.grabGfx.clear();
+        if (this.grabText) this.grabText.setVisible(false);
+        return;
+      }
+      if (!this.grabGfx) this.grabGfx = this.add.graphics().setDepth(29);
+      const g = this.grabGfx;
+      g.clear();
+      const t = this.elapsed;
+      const px = p.grabbed.x;
+      const bx = px - 96;
+      const by = this.player.y - 196;
+      // 挣扎光环：脉冲，读起来是「我在被控住」
+      g.lineStyle(3, 0xff6a2a, 0.45 + Math.sin(t * 14) * 0.3)
+        .strokeCircle(px, this.player.y - 62, 34 + Math.sin(t * 10) * 5);
+      g.lineStyle(2, 0xffd27a, 0.5 + Math.sin(t * 14 + 1.2) * 0.3)
+        .strokeCircle(px, this.player.y - 62, 46 + Math.sin(t * 10 + 1.2) * 5);
+      // 提示框
+      g.fillStyle(0x0a0c13, 0.90).fillRoundedRect(bx, by, 192, 52, 8);
+      g.lineStyle(2, 0xff8a3a, 0.95).strokeRoundedRect(bx, by, 192, 52, 8);
+      // 巨手剩余血量
+      const h = this.boss.hand;
+      if (h && !h.destroyed) {
+        const k = Math.max(0, h.hp / h.maxHp);
+        g.fillStyle(0x2a1a22, 1).fillRoundedRect(bx + 14, by + 34, 164, 10, 5);
+        g.fillStyle(0xd8cfe0, 1).fillRoundedRect(bx + 14, by + 34, 164 * k, 10, 5);
+        g.lineStyle(1, 0xff8a3a, 0.8).strokeRoundedRect(bx + 14, by + 34, 164, 10, 5);
+      }
+      if (!this.grabText) {
+        this.grabText = this.add.text(bx + 96, by + 17, '', {
+          fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif',
+          fontSize: '15px', fontStyle: 'bold', color: '#ffd27a',
+        }).setOrigin(0.5, 0.5).setDepth(30);
+      }
+      const hpTxt = h && !h.destroyed ? `　${Math.ceil(h.hp)}` : '';
+      this.grabText.setVisible(true);
+      this.grabText.setText(`按 J 攻擊，打碎巨手掙脫！${hpTxt}`);
+      this.grabText.setPosition(bx + 96, by + 17);
+      this.grabText.setAlpha(0.62 + Math.sin(t * 11) * 0.38);
+    }
+
     // 全屏压暗层（过场用）。没有就建一个，之后复用。
     dimScreen(alpha, ms) {
       if (!this.dimOverlay) {
-        this.dimOverlay = this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0).setDepth(48);
+        this.dimOverlay = this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0).setDepth(48).setScrollFactor(0);
       }
       this.tweens.add({ targets: this.dimOverlay, alpha, duration: Math.max(1, ms) });
     }
@@ -2580,7 +3869,8 @@
       this.setMessage('巫妖架勢崩潰！獲得 1.6 秒高額反擊窗口，並且直接削掉一截血。');
       // ① 破架势直接削血：这是玩家「主动推进阶段」的杠杆。
       // 放在最后调用，因为它可能直接把 Boss 打进下一阶段、甚至打空进入 P5。
-      const chunk = Math.max(1, Math.round(b.maxHp * 0.07));
+      // ② 破架势是玩家主动压缩阶段的杠杆，7% 偏小，提到 10%
+      const chunk = Math.max(1, Math.round(b.maxHp * 0.10));
       this.damageBoss(chunk, true);
     }
 
@@ -2589,6 +3879,13 @@
       g.clear();
       if (this.room === 'boss' && this.boss.mode === 'tell') {
         const move = this.boss.move;
+        // 可弹反的招式：在玩家身上画金色环，告诉玩家「这一招能弹」
+        const parryableNow = move === 'slash' || move === 'rush';
+        if (parryableNow && this.boss.encounter === 'rift') {
+          const pulse = 0.55 + Math.sin(this.elapsed * 9) * 0.35;
+          g.lineStyle(3, 0xffd76a, pulse).strokeCircle(this.player.x, this.player.y - 62, 46);
+          g.lineStyle(2, 0xfff6dc, pulse * 0.8).strokeCircle(this.player.x, this.player.y - 62, 34);
+        }
         // P5 一切预警改成炽红，和幽紫阶段形成强烈对比
         if (this.boss.phase === 5 && this.boss.revived) {
           const hot = this.boss.slashTempo === 'fast' ? 0xffd27a : 0xff4d14;
@@ -2598,7 +3895,7 @@
             g.lineStyle(4, hot, 0.85).strokeCircle(this.bossSprite.x, FLOOR - 4, r5);
             g.lineStyle(2, 0xfff0c8, 0.5).strokeCircle(this.bossSprite.x, FLOOR - 4, r5 * 0.7);
           } else if (move === 'shot') {
-            const shotEnd = this.boss.facing > 0 ? WIDTH - 40 : 40;
+            const shotEnd = this.boss.facing > 0 ? WORLD_W - 40 : 40;
             const lanes = this.boss.phase >= 3 ? [72, 132, 192] : [72, 146];
             for (const lane of lanes) {
               g.lineStyle(4, 0xff4d14, 0.34).lineBetween(this.bossSprite.x, FLOOR - lane, shotEnd, FLOOR - lane);
@@ -2612,25 +3909,81 @@
           } else if (move === 'burn') {
             // ② 焚天：5 个区域烧 4 个，只留一个安全口
             if (!this.boss.burnZones) {
-              const safe = Math.floor(Math.random() * 5);
-              this.boss.burnZones = [0, 1, 2, 3, 4].map((i) => ({ x: 110 + i * 178, safe: i === safe }));
+              // 5 区改 4 区、半径 96 改 70：原来几乎把地面铺满，没有安全走位空间
+              const safe = Math.floor(Math.random() * 4);
+              this.boss.burnZones = [0, 1, 2, 3].map((i) => ({ x: 150 + i * 220, safe: i === safe }));
             }
             for (const z of this.boss.burnZones) {
               if (z.safe) {
-                g.fillStyle(0x2f6b4a, 0.20).fillCircle(z.x, FLOOR - 5, 96);
-                g.lineStyle(3, 0x8fe0b0, 0.85).strokeCircle(z.x, FLOOR - 5, 96);
+                g.fillStyle(0x2f6b4a, 0.20).fillCircle(z.x, FLOOR - 5, 70);
+                g.lineStyle(3, 0x8fe0b0, 0.85).strokeCircle(z.x, FLOOR - 5, 70);
                 g.lineStyle(2, 0xd8ffe8, 0.7).lineBetween(z.x - 20, FLOOR - 5, z.x + 20, FLOOR - 5);
                 g.lineBetween(z.x, FLOOR - 25, z.x, FLOOR + 15);
               } else {
-                g.fillStyle(0xff4d14, 0.22).fillCircle(z.x, FLOOR - 5, 96);
-                g.lineStyle(4, 0xff8a3a, 0.9).strokeCircle(z.x, FLOOR - 5, 96);
-                g.lineStyle(2, 0xffd27a, 0.55).strokeCircle(z.x, FLOOR - 5, 72);
+                const kb = Math.max(0, Math.min(1, (this.bossMoves().burn.tell * this.phaseSpeed() - this.boss.timer) / Math.max(0.01, this.bossMoves().burn.tell * this.phaseSpeed())));
+                this.drawCountdown(g, z.x, FLOOR - 5, 70, kb, 0xfff0c8, 0xff4d14);
+                g.lineStyle(2, 0xff8a3a, 0.55).strokeCircle(z.x, FLOOR - 5, 54);
               }
             }
-          } else if (move === 'pull') {
-            g.lineStyle(3, 0xff4d14, 0.45).lineBetween(this.bossSprite.x, FLOOR - 206, this.player.x, this.player.y - 74);
-            g.lineStyle(1, 0xffd27a, 0.7).lineBetween(this.bossSprite.x, FLOOR - 206, this.player.x, this.player.y - 74);
-            g.lineStyle(3, 0xffb45c, 0.9).strokeCircle(this.player.x, FLOOR - 3, 40);
+          } else if (move === 'hand') {
+            // B 骸骨巨手预警：前 55% 追踪、后 45% 锁定。
+            // 锁定这件事必须让玩家看出来，否则被抓会觉得是暗算。
+            const total = this.bossMoves().hand.tell * this.phaseSpeed();
+            const elapsed = Math.max(0, total - this.boss.timer);
+            if (!this.boss.handLocked) {
+              // ④ 预判玩家 0.28 秒后的位置：站着不动会被抓，直线跑也会被抓，
+              //    必须变向才能甩掉——这才叫"会抓人"。
+              this.boss.handX = clamp(this.player.x + this.player.body.velocity.x * 0.28,
+                60, this.arenaMaxX() - 8);
+              if (elapsed >= total * 0.55) {
+                this.boss.handLocked = true;
+                this.playSfx('sfx_boss_tell', 0.5);
+                this.cameras.main.shake(150, 0.004);
+              }
+            }
+            const hx = this.boss.handX ?? this.player.x;
+            const lock = this.boss.handLocked;
+            // ② 圈半径 = 实际抓取半径，看到多少就是多少
+            this.drawCountdown(g, hx, FLOOR - 5, HAND_GRAB_R, elapsed / Math.max(0.01, total), 0xfff0c8, 0xff4d14);
+            g.lineStyle(2, 0xfff0c8, 0.6).strokeCircle(hx, FLOOR - 5, HAND_GRAB_R * 0.55);
+            if (lock) {
+              g.lineStyle(3, 0xfff0c8, 0.95).lineBetween(hx - 26, FLOOR - 31, hx + 26, FLOOR + 21);
+              g.lineBetween(hx + 26, FLOOR - 31, hx - 26, FLOOR + 21);
+            }
+          } else if (move === 'handSlam') {
+            // C 锤击预警：巨手高举 → 落点大圈 → 砸下
+            const total = this.bossMoves().handSlam.tell * this.phaseSpeed();
+            const elapsed = Math.max(0, total - this.boss.timer);
+            if (!this.boss.handLocked) {
+              // ④ 锤击同样预判，往你跑的方向提前量
+              this.boss.handX = clamp(this.player.x + this.player.body.velocity.x * 0.24,
+                60, this.arenaMaxX() - 8);
+              if (elapsed >= total * 0.5) this.boss.handLocked = true;
+            }
+            const hx = this.boss.handX ?? this.player.x;
+            const k = Math.max(0, Math.min(1, elapsed / Math.max(0.01, total)));
+            this.drawCountdown(g, hx, FLOOR - 5, 104, k, 0xfff0c8, 0xff2a06);
+            g.lineStyle(3, 0xff8a3a, 0.5).strokeCircle(hx, FLOOR - 5, 104 * (0.35 + k * 0.65));
+            g.lineStyle(6, 0xffd27a, 0.85).lineBetween(hx - 40, FLOOR - 5, hx + 40, FLOOR - 5);
+            g.lineBetween(hx, FLOOR - 45, hx, FLOOR + 35);
+          } else if (move === 'handGrab') {
+            // C 抓取预警：朝玩家方向的横向长条，看得见伸过来的路径
+            const dir = this.boss.facing;
+            g.fillStyle(0xff4d14, 0.18).fillRect(Math.min(this.bossSprite.x, this.bossSprite.x + dir * 250), FLOOR - 118, 250, 118);
+            g.lineStyle(4, 0xff8a3a, 0.9).lineBetween(this.bossSprite.x, FLOOR - 96, this.bossSprite.x + dir * 250, FLOOR - 96);
+            g.lineStyle(2, 0xfff0c8, 0.7).lineBetween(this.bossSprite.x, FLOOR - 40, this.bossSprite.x + dir * 250, FLOOR - 40);
+            g.lineStyle(3, 0xffd27a, 0.9).strokeCircle(this.player.x, FLOOR - 3, 42);
+          } else if (move === 'dash') {
+            // 冲刺预警：贴地的一条长带，明确「它要从哪边冲过来」
+            const dir = this.boss.facing;
+            const y0 = FLOOR - 118;
+            const total0 = this.bossMoves().dash.tell * this.phaseSpeed();
+            const k0 = Math.max(0, Math.min(1, (total0 - this.boss.timer) / Math.max(0.01, total0)));
+            g.fillStyle(0xff2a06, 0.10 + k0 * 0.20).fillRect(0, y0, WIDTH, 118);
+            g.lineStyle(4, 0xff8a3a, 0.9).lineBetween(0, y0, WIDTH, y0);
+            const edge = dir > 0 ? 0 : WIDTH;
+            g.lineStyle(5, 0xffd27a, 0.9).lineBetween(edge, y0, edge + dir * (60 + k0 * 90), y0);
+            g.lineStyle(3, 0xfff0c8, 0.8).strokeCircle(this.bossSprite.x, FLOOR - 60, 44);
           } else if (move === 'wave') {
             const radius = this.bossMoves().wave.range;
             g.fillStyle(0xff4d14, 0.34).fillCircle(this.boss.sealX, FLOOR - 5, radius);
@@ -2656,7 +4009,7 @@
           g.lineStyle(2, tint, 0.72).lineBetween(left, FLOOR - 80, right, FLOOR - 80);
           }
         } else if (move === 'shot') {
-          const shotEnd = this.boss.facing > 0 ? WIDTH - 40 : 40;
+          const shotEnd = this.boss.facing > 0 ? WORLD_W - 40 : 40;
           const shotColor = this.boss.encounter === 'rift' ? 0xc98aff : 0xe78a81;
           const lanes = this.boss.encounter === 'rift' ? (this.boss.phase >= 3 ? [72, 132, 192] : [72, 146]) : [100];
           for (const lane of lanes) {
@@ -2685,8 +4038,10 @@
             g.lineStyle(2, 0xf0d8ff, 0.8).lineBetween(this.boss.sealX, FLOOR - 24, this.boss.sealX, FLOOR + 14);
           } else {
             const dangerColor = 0xd65767;
-            g.fillStyle(dangerColor, 0.22).fillRect(245, FLOOR - 14, 471, 17);
-            g.lineStyle(2, 0xed7788, 0.8).lineBetween(245, FLOOR - 16, 716, FLOOR - 16);
+            // 场地加宽后，危险区要一直画到新边界——否则 917 之后那段
+            // 没有图示，玩家会以为那里是安全的（其实不是）。
+            g.fillStyle(dangerColor, 0.22).fillRect(245, FLOOR - 14, WORLD_W - 245, 17);
+            g.lineStyle(2, 0xed7788, 0.8).lineBetween(245, FLOOR - 16, WORLD_W, FLOOR - 16);
             g.fillStyle(0x75c9bd, 0.2).fillRoundedRect(52, FLOOR - 6, 192, 7, 3);
             g.fillStyle(0x75c9bd, 0.2).fillRoundedRect(716, FLOOR - 6, 200, 7, 3);
             g.lineStyle(2, 0xa4e1d1, 0.82).lineBetween(52, FLOOR - 8, 244, FLOOR - 8);
@@ -2700,7 +4055,7 @@
         if (enemy.dead || enemy.state !== 'tell') continue;
         const c = enemy.type === 'ranged' ? 0xe9b477 : 0xe78678;
         if (enemy.type === 'ranged') {
-          const endX = enemy.lockedDirection > 0 ? WIDTH - 28 : 28;
+          const endX = enemy.lockedDirection > 0 ? WORLD_W - 28 : 28;
           g.lineStyle(2, c, 0.55).lineBetween(enemy.sprite.x, FLOOR - 88, endX, FLOOR - 88);
           g.fillStyle(c, 0.75).fillCircle(enemy.sprite.x + enemy.lockedDirection * 24, FLOOR - 88, 6);
         } else {
@@ -2743,6 +4098,20 @@
       g.fillStyle(full ? 0xfff0c8 : 0xe0c187, full ? 1 : 0.95).fillRoundedRect(x + 1, py2 + 1, Math.max(0, pw2), 7, 3);
       g.lineStyle(1, 0x6b5a3a, 0.7).lineBetween(x + width * 0.52, py2 + 1, x + width * 0.52, py2 + 8);
       g.lineStyle(1, 0xffd27a, full ? 1 : 0.5).strokeRoundedRect(x, py2, width, 9, 4);
+      // C 附身巨手独立血条
+      const hd = this.boss.hand;
+      if (hd && hd.attached && !hd.destroyed) {
+        g.fillStyle(0x111722, 0.85).fillRoundedRect(x, py2 + 13, width, 8, 4);
+        g.fillStyle(0xd8cfe0, 0.95).fillRoundedRect(x + 1, py2 + 14, (width - 2) * (hd.hp / hd.maxHp), 6, 3);
+        g.lineStyle(1, 0xff8a3a, 0.85).strokeRoundedRect(x, py2 + 13, width, 8, 4);
+        if (this.handLabel) {
+          this.handLabel.setText(`骸骨巨手 ×2　${Math.ceil(hd.hp)} / ${hd.maxHp}　·　打碎後不再生`);
+          this.handLabel.setVisible(true);
+        }
+      } else if (this.handLabel) {
+        this.handLabel.setText(this.boss.handGone ? '骸骨巨手 已摧毀（不再生）' : '');
+        this.handLabel.setVisible(this.boss.handGone === true);
+      }
       this.postureLabel.setText(`架勢 ${Math.round(this.boss.posture)}/100　·　兩次精準彈反可破`);
       this.postureLabel.setVisible(true);
       this.bossLabel.setText(`${rift ? '裂隙巫妖' : '幽影守卫精英'} · ${rift ? `P${this.boss.phase}` : '精英'} · ${Math.ceil(this.boss.hp)} / ${this.boss.maxHp}`);
@@ -2790,8 +4159,9 @@
 
     updateUi() {
       const p = this.playerState;
-      document.querySelector('#hpText').innerHTML = `${Math.ceil(p.hp)} <small>/ 100</small>`;
-      document.querySelector('#hpFill').style.width = pct(p.hp, 100);
+      const hpMax = p.maxHp || 100;
+      document.querySelector('#hpText').innerHTML = `${Math.ceil(p.hp)} <small>/ ${hpMax}</small>`;
+      document.querySelector('#hpFill').style.width = pct(p.hp, hpMax);
       document.querySelector('#staminaText').innerHTML = `${Math.ceil(p.stamina)} <small>/ 100</small>`;
       document.querySelector('#staminaFill').style.width = pct(p.stamina, 100);
       document.querySelector('#energyText').innerHTML = `${String(Math.floor(p.energy)).padStart(2, '0')} <small>/ ${ULTIMATE_REQUIRED}</small>`;
@@ -3076,6 +4446,35 @@
       const label = this.add.text(x, y, text, { fontFamily: 'Segoe UI, Microsoft YaHei, sans-serif', fontSize: '19px', color, fontStyle: 'bold', stroke: '#10151c', strokeThickness: 5 }).setOrigin(0.5).setDepth(40).setScale(0.4);
       this.tweens.add({ targets: label, scale: 1.15, duration: 120, yoyo: true, ease: 'Back.Out' });
       this.effects.push({ kind: 'float', object: label, life: 0.9, maxLife: 0.9, speed: 45 });
+    }
+
+    // A 场地右边界：Boss 战用加宽后的世界，普通关卡保持原样
+    arenaMaxX() { return WORLD_W - 44; }
+    bossMaxX() { return WORLD_W - 90; }
+
+    // A 每帧更新场地边界与相机。放在每帧自愈，就不用到处去挂 enterRoom 的钩子。
+    // 现在不滚动：滚动量恒为 0，场地宽度恒等于视口宽度。
+    updateCamera() {
+      const cam = this.cameras.main;
+      const wantW = WIDTH;
+      if (this.arenaWidth !== wantW) {
+        this.arenaWidth = wantW;
+        this.physics.world.setBounds(38, 0, wantW - 76, FLOOR + 15);
+      }
+      if (cam.scrollX !== 0) cam.scrollX = 0;
+    }
+
+    // B 预警计时环：把「还有多久落地」直接画成时钟。
+    // 只画一个静止的圈，玩家读不出时间——这是原来预警最大的问题。
+    drawCountdown(g, x, y, r, k, color, bg) {
+      const kk = Math.max(0, Math.min(1, k));
+      g.fillStyle(bg, 0.09 + kk * 0.20).fillCircle(x, y, r * (0.22 + kk * 0.78));
+      g.lineStyle(3, color, 0.5).strokeCircle(x, y, r);
+      if (kk > 0.015) {
+        g.lineStyle(6, color, 0.95).beginPath();
+        g.arc(x, y, r - 3, -Math.PI / 2, -Math.PI / 2 + kk * Math.PI * 2, false);
+        g.strokePath();
+      }
     }
 
     isPlayerGrounded() {
