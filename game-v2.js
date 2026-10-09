@@ -1606,7 +1606,9 @@
           this.tweens.add({ targets: ghost, alpha: 0, duration: 300, onComplete: () => ghost.destroy() });
           this.spawnBurst(this.bossSprite.x, FLOOR - 120, 0xffd27a, 4);
         }
-        if (Math.abs(this.playerState.x - this.bossSprite.x) < 82
+        // 坐标在 this.player 上，playerState 只有状态。原来写成 playerState.x，
+        // 得到 undefined → NaN < 82 → false，所以冲刺永远撞不到人。
+        if (Math.abs(this.player.x - this.bossSprite.x) < 82
             && this.playerState.invuln <= 0 && this.playerState.hurtTimer <= 0) {
           this.playerDamage('焚身衝刺', 22);
         }
