@@ -9,6 +9,39 @@
   // P5「亡者归来」：血条自燃烧尽的秒数。到 P5 时血量从这个时间全额往下掉，
   // 玩家输出可以把血条压得更低，因此「撑到烧完」与「直接打死」都算通关。
   const PHASE5_BURN_SECONDS = 35;
+
+  // 对话剧本。who=说话人，color=名牌配色，text=内容。
+  const STORY = {
+    intro: [
+      { who: '旁白', color: 0x8fa8c8, text: '裂隙在峡谷深处张开了。它已经开了三天。' },
+      { who: '骑士', color: 0xcfe0ff, text: '……又是这里。这次的守卫，比上次多。' },
+      { who: '旁白', color: 0x8fa8c8, text: '往里走。你会先遇到守卫，然后是守卫背后的那个东西。' },
+    ],
+    eliteDown: [
+      { who: '幽影守卫', color: 0xb98cff, text: '（单膝跪地）……大人，他来了。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（从裂隙里传出）做得不错，小骑士。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '可惜你走进的是我的峡谷。' },
+    ],
+    revive: [
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（骨架散落一地）……咳。' },
+      { who: '骑士', color: 0xcfe0ff, text: '结束了。' },
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '结束？' },
+      { who: '裂隙巫妖', color: 0xff6a3a, text: '有些东西，死了才会真正开始。' },
+    ],
+    burnout: [
+      { who: '裂隙巫妖', color: 0xff8a5c, text: '（火焰将尽）……不。' },
+      { who: '裂隙巫妖', color: 0xff6a3a, text: '我不会一个人走。' },
+      { who: '旁白', color: 0x8fa8c8, text: '余烬里浮出一颗烧红的核——它开始瞄准你。' },
+    ],
+    survived: [
+      { who: '骑士', color: 0xcfe0ff, text: '（拍掉肩上的灰）……躲开了。' },
+      { who: '旁白', color: 0x8fa8c8, text: '裂隙合上了。这一次，是真的。' },
+    ],
+    tookIt: [
+      { who: '裂隙巫妖', color: 0xff3a12, text: '（最后一丝声音）……抓到你了。' },
+      { who: '旁白', color: 0x8fa8c8, text: '峡谷里只剩下一地灰。' },
+    ],
+  };
   const ULTIMATE_REQUIRED = 70;
   const ULTIMATE_RANGE = 320;
   const STORAGE = {
@@ -184,11 +217,20 @@
         pause: Phaser.Input.Keyboard.KeyCodes.ESC,
       });
       this.input.keyboard.on('keydown-SPACE', (event) => {
+        // 对话优先：有对话框时空格是"继续"，不再是跳跃
+        if (this.dialogueActive) {
+          event.preventDefault();
+          this.advanceDialogue();
+          return;
+        }
         if (this.status === 'story') {
           event.preventDefault();
           this.skipStory();
         }
       });
+      this.input.keyboard.on('keydown-ENTER', () => this.advanceDialogue());
+      this.input.keyboard.on('keydown-ESC', () => { if (this.dialogueActive) this.endDialogue(); });
+      this.input.on('pointerdown', () => { if (this.dialogueActive) this.advanceDialogue(); });
       this.input.keyboard.addCapture([Phaser.Input.Keyboard.KeyCodes.SPACE, Phaser.Input.Keyboard.KeyCodes.UP, Phaser.Input.Keyboard.KeyCodes.LEFT, Phaser.Input.Keyboard.KeyCodes.RIGHT]);
 
       // 策划测试快捷键：1/2/3/4 切 Boss 阶段，Q 补满能量，H 回满血
@@ -429,6 +471,10 @@
       document.querySelector('#bossBtn').innerHTML = '直达 Boss <b>↗</b>';
       document.querySelector('#resultSummary').hidden = true;
       this.playMusic('normal');
+      // 开场叙事：只在完整流程讲，直达 Boss 不打断练习
+      if (mode === 'full') {
+        this.time.delayedCall(600, () => { if (this.status === 'run') this.startDialogue(STORY.intro); });
+      }
       if (this.debugMode) this.setMessage(`${this.godMode ? '【无敌策划测试】' : '【承伤策划测试】'}快捷键：1/2/3/4 切换巫妖阶段，Q 补满能量，H 回满血。`);
       else this.setMessage(mode === 'boss' ? 'Boss 练习模式：生命与耐力已补满，先认清首领招式预警。' : '热身区：单一近战敌人先教会你观察抬剑与近身距离。');
       if (mode === 'boss' || (this.debugMode && debugRoom === 'boss')) {
@@ -756,10 +802,15 @@
       const dt = Math.min(delta / 1000, 0.05);
       this.elapsed += dt;
       this.messageTimer = Math.max(0, this.messageTimer - dt);
-      this.updatePlayer(dt);
-      this.updateEnemies(dt);
+      this.updateDialogue(dt);
+      this.updateFinalDive(dt);
+      // 对话期间冻结玩法，但背景演出（火焰/余烬/UI）继续跑
+      if (!this.dialogueActive) {
+        this.updatePlayer(dt);
+        this.updateEnemies(dt);
+        this.updateBoss(dt);
+      }
       this.updateProjectiles(dt);
-      this.updateBoss(dt);
       this.updateEffects(dt);
       this.drawFinalBoss();
       this.updateTelegraph();
@@ -1198,6 +1249,20 @@
           this.beginBossBurnout();
           return;
         }
+        // ③ 灼热光环：贴近会被持续灼伤。
+        // 没有它，P5 的最优解就是「站远处等 35 秒」，玩家没有任何决策；
+        // 有了它，就必须「进→打一套→退」，把生存和输出真正绑在一起。
+        const dist = Math.abs(this.player.x - this.bossSprite.x);
+        if (dist < 118 && this.playerState.hurtTimer <= 0 && this.playerState.invuln <= 0) {
+          this.heatAccum = (this.heatAccum || 0) + dt;
+          if (this.heatAccum >= 0.9) {
+            this.heatAccum = 0;
+            this.floatText(this.player.x, this.player.y - 122, '灼傷', '#ff9a5c');
+            this.playerDamage('灼熱光環', 4);
+          }
+        } else {
+          this.heatAccum = 0;
+        }
       }
 
       const dx = this.player.x - this.bossSprite.x;
@@ -1539,17 +1604,22 @@
         p.parryWindow = 0;
         p.parryAnim = 0.26;
         p.guardRecover = 0.1;
-        p.stamina = Math.min(100, p.stamina + 8);
-        p.energy = Math.min(100, p.energy + 18);
+        // ② 弹反的代价是「时机 + 距离 + 朝向」，收益必须配得上：
+        // 耐力返还 18、能量 28、架势 52（两次即可破架势）。
+        p.stamina = Math.min(100, p.stamina + 18);
+        p.energy = Math.min(100, p.energy + 28);
         this.stats.parries += 1;
         this.player.play('hero-attack', true);
-        this.spawnBurst(this.player.x + p.facing * 35, this.player.y - 85, 0xe8d19a, 16);
-        this.cameras.main.shake(95, 0.003);
-        this.playSfx('sfx-parry', 0.38);
-        this.setMessage(`精準彈反 ${source}！Boss 架勢大幅下降，趁硬直反擊。`);
+        this.spawnBurst(this.player.x + p.facing * 35, this.player.y - 85, 0xe8d19a, 26);
+        this.spawnBurst(this.player.x + p.facing * 35, this.player.y - 85, 0xfff0c8, 12);
+        this.cameras.main.shake(120, 0.004);
+        this.playSfx('sfx-parry', 0.42);
+        this.setMessage(`精準彈反 ${source}！架勢 -52、能量 +28、耐力返還 18，趁硬直反擊。`);
         this.floatText(this.player.x + p.facing * 26, this.player.y - 132, '精準彈反', '#f2d99f');
         if (this.room === 'boss') {
-          this.boss.posture = Math.min(100, this.boss.posture + 36);
+          const before = this.boss.posture;
+          this.boss.posture = Math.min(100, this.boss.posture + 52);
+          this.floatText(this.bossSprite.x, FLOOR - 250, `架勢 ${before}→${this.boss.posture}`, '#ffd9a0');
           if (this.boss.posture >= 100) this.breakBossPosture();
           else if (this.boss.mode === 'active' || this.boss.mode === 'tell') this.beginBossRecovery(1.0);
         }
@@ -1741,11 +1811,16 @@
       this.spawnBurst(bossCenterX(this.bossSprite), FLOOR - 112, vulnerable ? 0xf3d4a0 : 0xb8cedb, vulnerable ? 12 : 7);
       this.floatText(this.bossSprite.x, FLOOR - 224, `-${damage}`, vulnerable ? '#f6d79f' : '#c9d6dc');
       this.cameras.main.shake(vulnerable ? 74 : 45, vulnerable ? 0.0022 : 0.0012);
-      if (vulnerable) this.setMessage(`命中恢復中的Boss：-${damage}。這是完整輸出窗口。`);
+      if (b.phase === 5) {
+        // 让「输出能加速烧条」这件事被玩家看见，否则 P5 的输出像是在白打
+        this.floatText(this.bossSprite.x + 40, FLOOR - 262, '爆燃', '#ffb45c');
+        this.setMessage(`亡者歸來：命中加速自燃 -${damage}。血條被壓得比燒條更低，繼續打。`);
+      } else if (vulnerable) this.setMessage(`命中恢復中的Boss：-${damage}。這是完整輸出窗口。`);
       else this.setMessage(`命中Boss：-${damage}；招式收招時傷害更高。`);
       if (b.hp <= 0) {
         if (b.encounter === 'elite') {
-          this.showRiftStory();
+          // 先让巫妖说话，再弹原有的分支界面
+          this.startDialogue(STORY.eliteDown, () => this.showRiftStory());
           return;
         }
         // 裂隙巫妖第一次被打空不会死：进入 P5「亡者归来」
@@ -1868,6 +1943,9 @@
 
       // --- 脚下的火环
       art.fillStyle(0xff4d14, 0.22 * flick + 0.12).fillCircle(x, FLOOR + bob - 8, 96 * S);
+      // 灼热光环的边界圈：让「贴太近会被烧」这件事是看得见的，而不是暗算
+      art.lineStyle(2, 0xff6a2a, 0.26 + Math.sin(t * 6) * 0.14).strokeCircle(x, FLOOR + bob - 6, 118 * S);
+      art.lineStyle(1, 0xffb45c, 0.18 + Math.sin(t * 6 + 1.6) * 0.10).strokeCircle(x, FLOOR + bob - 6, 118 * S - 6);
     }
 
     // P5 复活过场：4.4 秒七个节拍。
@@ -1895,7 +1973,7 @@
       this.playMusic('p5');
       const ringFx = () => this.skillFx('fx-soulburst', 'fx_soulburst');
 
-      // 节拍 1（0.0s）倒下：重击感 —— 红闪、强震、原体崩落
+      // 节拍 1：倒下
       this.cameras.main.flash(420, 130, 10, 6);
       this.cameras.main.shake(460, 0.017);
       this.playSfx('sfx_boss_death', 0.55);
@@ -1903,53 +1981,40 @@
       this.spawnBurst(bx, FLOOR - 90, 0x2a1a2e, 30);
       this.setMessage('裂隙巫妖的骨架散了架，重重砸在地上。');
 
-      // 节拍 2（0.7s）死寂：压暗画面，镜头推近残骸
-      this.time.delayedCall(700, () => {
+      // 节拍 2：死寂 —— 压暗 + 推近，然后交给对话框演
+      this.time.delayedCall(900, () => {
         this.cameras.main.zoomTo(1.14, 700);
         this.dimScreen(0.62, 500);
-        this.setMessage('……峡谷安静了下来。');
       });
+      this.time.delayedCall(1600, () => {
+        this.startDialogue(STORY.revive, () => this.igniteFieryForm(bx));
+      });
+    }
 
-      // 节拍 3（1.9s）第一句台词
-      this.time.delayedCall(1900, () => {
-        this.setMessage('「你以为这样就结束了？」');
-        this.cameras.main.shake(180, 0.004);
-      });
-
-      // 节拍 4（2.7s）第二句台词 + 微弱火星
-      this.time.delayedCall(2700, () => {
-        this.setMessage('「有些东西，死了才会真正开始。」');
-        for (let i = 0; i < 5; i += 1) {
-          this.time.delayedCall(i * 90, () => {
-            const dot = this.add.circle(bx + (Math.random() - 0.5) * 90, FLOOR - 40 - Math.random() * 60, 2, 0xff6a2a, 0.9).setDepth(16);
-            this.tweens.add({ targets: dot, y: dot.y - 70, alpha: 0, duration: 800, onComplete: () => dot.destroy() });
-          });
-        }
-      });
-
-      // 节拍 5（3.4s）点火：白闪 + 三层赤红冲击环 + 火焰腾起，镜头拉回
-      this.time.delayedCall(3400, () => {
-        this.dimScreen(0, 260);
-        this.cameras.main.flash(340, 255, 220, 170);
-        this.cameras.main.shake(620, 0.02);
-        this.cameras.main.zoomTo(1.0, 520);
-        this.playSfx('sfx_boss_phase', 0.55);
-        this.playSfx('sfx_rune_burst', 0.4);
-        for (let i = 0; i < 3; i += 1) {
-          this.time.delayedCall(i * 170, () => {
-            const rf = ringFx();
-            this.spawnFx(rf.anim, rf.tex, bx, FLOOR - 40, 3.2 + i * 1.5, 9);
-          });
-        }
-        this.spawnBurst(bx, FLOOR - 170, 0xffb45c, 54);
-        this.startBossFlames();
-        this.setMessage('它从灰里站了起来——法袍烧尽，骨架外露，头骨裂开喷出火。');
-      });
-
-      // 节拍 6（4.2s）定场：交代玩法
-      this.time.delayedCall(4200, () => {
-        this.setMessage('亡者归来：它的生命正在自燃。撑到烈焰烧尽，或者抢先把它打散。');
-      });
+    // 对话结束后点火：这才是"形态切换"真正发生的一刻
+    igniteFieryForm(bx) {
+      const b = this.boss;
+      this.dimScreen(0, 260);
+      this.cameras.main.flash(340, 255, 220, 170);
+      this.cameras.main.shake(620, 0.02);
+      this.cameras.main.zoomTo(1.0, 520);
+      this.playSfx('sfx_boss_phase', 0.55);
+      this.playSfx('sfx_rune_burst', 0.4);
+      const ringFx = () => this.skillFx('fx-soulburst', 'fx_soulburst');
+      for (let i = 0; i < 3; i += 1) {
+        this.time.delayedCall(i * 170, () => {
+          const rf = ringFx();
+          this.spawnFx(rf.anim, rf.tex, bx, FLOOR - 40, 3.2 + i * 1.5, 9);
+        });
+      }
+      this.spawnBurst(bx, FLOOR - 170, 0xffb45c, 54);
+      this.startBossFlames();
+      b.mode = 'idle';
+      b.timer = 0.5;
+      b.sequence = 0;
+      b.hitResolved = true;
+      this.playerState.invuln = Math.max(this.playerState.invuln, 2.0);
+      this.setMessage('亡者归来：它的生命正在自燃。撑到烈焰烧尽，或者抢先把它打散。');
     }
 
     // 燃尽终曲：血条烧空或被直接打死时走这里，3.6 秒熄灭演出后才结算。
@@ -1981,17 +2046,185 @@
       this.spawnBurst(bx, FLOOR - 170, 0xffd27a, 64);
       this.spawnBurst(bx, FLOOR - 100, 0xff5a1e, 52);
       this.spawnBurst(bx, FLOOR - 40, 0xff3a10, 40);
-      // 熄灭：火焰逐个散掉，镜头推近余烬
+      // 熄灭：火焰散掉，镜头推近余烬
       this.time.delayedCall(1500, () => {
         this.stopBossFlames();
         this.cameras.main.zoomTo(1.16, 800);
         this.setMessage('骨架连同火焰一起塌成一堆余烬。');
       });
       this.time.delayedCall(2400, () => { this.spawnBurst(bx, FLOOR - 30, 0x8a7a6a, 26); });
-      this.time.delayedCall(3300, () => {
-        this.cameras.main.zoomTo(1.0, 420);
-        this.endRun(true);
+      // 它不会安安静静地死——残骸聚成一颗核，做最后一次自爆突进
+      this.time.delayedCall(2800, () => {
+        this.startDialogue(STORY.burnout, () => this.beginFinalDive(bx));
       });
+    }
+
+    // ==================== 最终自爆突进 ====================
+    // 锁定 2.2 秒（地面有预警圈）→ 0.4 秒突进 → 爆炸。
+    // 走位或闪避无敌帧都能躲开；被命中吃 45 伤害，若因此阵亡就是战败。
+    beginFinalDive(bx) {
+      if (this.status !== 'run') return;
+      const by = FLOOR - 150;
+      this.cameras.main.zoomTo(1.0, 500);
+      const halo = this.add.circle(bx, by, 44, 0xff4d14, 0.42).setDepth(25);
+      const core = this.add.circle(bx, by, 19, 0xffd27a, 1).setDepth(26);
+      const reticle = this.add.graphics().setDepth(27);
+      this.finalDive = { halo, core, reticle, t: 0, locked: false, tx: this.player.x, ty: this.player.y, done: false };
+      this.playSfx('sfx_boss_tell', 0.42);
+      this.setMessage('烧红的核浮在半空，开始锁定你——离开地面上的红圈。');
+    }
+
+    updateFinalDive(dt) {
+      const d = this.finalDive;
+      if (!d || d.done) return;
+      d.t += dt;
+      const pulse = 1 + Math.sin(this.elapsed * 18) * 0.13;
+      if (!d.locked) {
+        // 锁定阶段：预警圈跟着玩家实时移动
+        d.tx = this.player.x;
+        d.ty = this.player.y;
+        const dx = this.player.x - d.core.x, dy = (this.player.y - 42) - d.core.y;
+        d.reticle.clear();
+        d.reticle.lineStyle(2, 0xff4d14, 0.5).lineBetween(d.core.x, d.core.y, d.core.x + dx, d.core.y + dy);
+        d.reticle.lineStyle(3, 0xffd27a, 0.9).strokeCircle(this.player.x, FLOOR - 3, 52 * pulse);
+        d.reticle.lineStyle(2, 0xfff0c8, 0.75).strokeCircle(this.player.x, FLOOR - 3, 34);
+        d.halo.setScale(pulse);
+        d.core.setScale(1 + Math.sin(this.elapsed * 22) * 0.14);
+        if (d.t >= 2.2) {
+          d.locked = true;
+          // 清掉此前的无敌，让"最后一下"真的算数（玩家仍可靠闪避/走位躲开）
+          this.playerState.invuln = 0;
+          this.playSfx('sfx_boss_tell', 0.55);
+          this.cameras.main.shake(220, 0.007);
+          const lockTx = this.player.x;
+          this.tweens.add({
+            targets: [d.core, d.halo],
+            x: lockTx,
+            y: FLOOR - 34,
+            duration: 400,
+            ease: 'Quad.In',
+            onComplete: () => this.resolveFinalDive(lockTx),
+          });
+        }
+        return;
+      }
+      d.reticle.clear();
+    }
+
+    resolveFinalDive(lockTx) {
+      const d = this.finalDive;
+      if (!d || d.done) return;
+      d.done = true;
+      const dist = Math.abs(this.player.x - lockTx);
+      // 爆炸
+      this.cameras.main.flash(300, 255, 190, 130);
+      this.cameras.main.shake(680, 0.019);
+      this.playSfx('sfx_rune_burst', 0.55);
+      const ringFx = () => this.skillFx('fx-soulburst', 'fx_soulburst');
+      for (let i = 0; i < 4; i += 1) {
+        this.time.delayedCall(i * 120, () => {
+          const rf = ringFx();
+          this.spawnFx(rf.anim, rf.tex, lockTx, FLOOR - 40, 2.4 + i * 1.1, 9);
+        });
+      }
+      this.spawnBurst(lockTx, FLOOR - 60, 0xffd27a, 62);
+      this.spawnBurst(lockTx, FLOOR - 30, 0xff4d14, 50);
+      this.spawnBurst(lockTx, FLOOR - 10, 0xff3a10, 34);
+      if (d.core) d.core.destroy();
+      if (d.halo) d.halo.destroy();
+      if (d.reticle) d.reticle.destroy();
+      this.finalDive = null;
+      const hit = dist <= 96;
+      if (hit) this.playerDamage('亡者自爆', 45);
+      this.time.delayedCall(1100, () => {
+        if (this.status !== 'run') return;   // 被炸死的话走战败结算
+        this.startDialogue(hit ? STORY.tookIt : STORY.survived, () => {
+          if (this.status === 'run') this.endRun(true);
+        });
+      });
+    }
+
+    // ==================== SLG 式对话系统 ====================
+    startDialogue(lines, onDone) {
+      if (!lines || !lines.length) { if (onDone) onDone(); return; }
+      this.dialogueQueue = lines.slice();
+      this.dialogueOnDone = onDone || null;
+      this.dialogueActive = true;
+      this.dialogueShown = 0;
+      this.dialogueAccum = 0;
+      this.buildDialoguePanel();
+      this.showDialogueLine();
+    }
+
+    buildDialoguePanel() {
+      if (this.dlgGfx) return;
+      const font = 'Segoe UI, Microsoft YaHei, sans-serif';
+      const px = 36, ph = 126, pw = WIDTH - px * 2, py = HEIGHT - ph - 22;
+      this.dlgGfx = this.add.graphics().setDepth(60);
+      this.dlgGfx.fillStyle(0x0a0c13, 0.92).fillRoundedRect(px, py, pw, ph, 12);
+      this.dlgGfx.lineStyle(2, 0x6a5a8a, 0.85).strokeRoundedRect(px, py, pw, ph, 12);
+      this.dlgGfx.fillStyle(0x151a26, 1).fillRoundedRect(px + 14, py + 14, 84, 84, 10);
+      this.dlgPortrait = this.add.text(px + 56, py + 56, '', { fontFamily: font, fontSize: '38px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5).setDepth(62);
+      this.dlgName = this.add.text(px + 114, py + 16, '', { fontFamily: font, fontSize: '17px', fontStyle: 'bold', color: '#ffffff' }).setDepth(62);
+      this.dlgBody = this.add.text(px + 114, py + 46, '', { fontFamily: font, fontSize: '15px', color: '#dde5f4', lineSpacing: 7, wordWrap: { width: pw - 150 } }).setDepth(62);
+      this.dlgHint = this.add.text(px + pw - 16, py + ph - 24, '空格 / 点击 继续　·　Esc 跳过', { fontFamily: font, fontSize: '12px', color: '#8f9ab3' }).setOrigin(1, 0).setDepth(62);
+    }
+
+    showDialogueLine() {
+      const line = this.dialogueQueue[0];
+      if (!line) { this.endDialogue(); return; }
+      const hex = '#' + line.color.toString(16).padStart(6, '0');
+      this.dlgName.setText(line.who).setColor(hex);
+      this.dlgPortrait.setText(line.who.slice(0, 1)).setColor(hex);
+      this.dlgBody.setText('');
+      this.dialogueShown = 0;
+      this.dialogueAccum = 0;
+    }
+
+    updateDialogue(dt) {
+      if (!this.dialogueActive || !this.dlgBody) return;
+      const line = this.dialogueQueue[0];
+      if (!line) return;
+      const full = line.text;
+      if (this.dialogueShown < full.length) {
+        this.dialogueAccum += dt;
+        while (this.dialogueAccum >= 0.028 && this.dialogueShown < full.length) {
+          this.dialogueAccum -= 0.028;
+          this.dialogueShown += 1;
+        }
+        this.dlgBody.setText(full.slice(0, this.dialogueShown));
+      }
+      const done = this.dialogueShown >= full.length;
+      const blink = Math.sin(this.elapsed * 5) > -0.2;
+      this.dlgHint.setAlpha(done ? (blink ? 0.95 : 0.3) : 0.22);
+    }
+
+    advanceDialogue() {
+      if (!this.dialogueActive) return;
+      const line = this.dialogueQueue[0];
+      if (!line) { this.endDialogue(); return; }
+      // 还在打字：先补全整句，不急着翻页
+      if (this.dialogueShown < line.text.length) {
+        this.dialogueShown = line.text.length;
+        this.dlgBody.setText(line.text);
+        return;
+      }
+      this.playSfx('sfx_guard', 0.10);
+      this.dialogueQueue.shift();
+      if (!this.dialogueQueue.length) this.endDialogue();
+      else this.showDialogueLine();
+    }
+
+    endDialogue() {
+      if (!this.dialogueActive) return;
+      this.dialogueActive = false;
+      const cb = this.dialogueOnDone;
+      this.dialogueOnDone = null;
+      this.dialogueQueue = [];
+      for (const key of ['dlgGfx', 'dlgName', 'dlgBody', 'dlgPortrait', 'dlgHint']) {
+        if (this[key]) { this[key].destroy(); this[key] = null; }
+      }
+      if (cb) cb();
     }
 
     // 全屏压暗层（过场用）。没有就建一个，之后复用。
@@ -2077,7 +2310,11 @@
       this.time.delayedCall(1600, () => { if (this.bossSprite.active) this.boss.encounter === 'rift' ? this.bossSprite.clearTint() : this.bossSprite.setTint(0xe7798e); });
       this.cameras.main.shake(180, 0.005);
       this.spawnBurst(this.bossSprite.x, FLOOR - 112, 0xf1d49d, 22);
-      this.setMessage('Boss 架勢崩潰！獲得 1.6 秒高額反擊窗口。');
+      this.setMessage('巫妖架勢崩潰！獲得 1.6 秒高額反擊窗口，並且直接削掉一截血。');
+      // ① 破架势直接削血：这是玩家「主动推进阶段」的杠杆。
+      // 放在最后调用，因为它可能直接把 Boss 打进下一阶段、甚至打空进入 P5。
+      const chunk = Math.max(1, Math.round(b.maxHp * 0.07));
+      this.damageBoss(chunk, true);
     }
 
     updateTelegraph() {
@@ -2277,7 +2514,7 @@
       if (this.boss.phase === 1) return '灵魂震爆是圆形法术，追魂冥火分层飞行；拉开距离并辨认弹道高度。';
       if (this.boss.phase === 2) return '幽魂换位先标记目的地；看见紫色圆环后立刻离开。';
       if (this.boss.phase === 3) return '亡魂印会锁定脚下位置；离开圆印或在爆发前跳起。';
-      if (this.boss.phase === 5) return '亡者归来：它的生命正在自燃，但也几乎不停手。撑到烈焰烧尽，或者抢先把它打散。';
+      if (this.boss.phase === 5) return '亡者归来：它一边自燃一边疯狂出手。贴近会被灼伤，需要「进→打一套→退」；撐到烈焰燒盡，或搶先把血條打空。';
       return '最终阶段魂火增至三层；震爆仍慢快交替，注意换位、符印与收招窗口。';
     }
 
