@@ -6,6 +6,9 @@
   const FLOOR = 466;
   const ELITE_MAX_HP = 360;
   const BOSS_MAX_HP = 720;
+  // P5「亡者归来」：血条自燃烧尽的秒数。到 P5 时血量从这个时间全额往下掉，
+  // 玩家输出可以把血条压得更低，因此「撑到烧完」与「直接打死」都算通关。
+  const PHASE5_BURN_SECONDS = 35;
   const ULTIMATE_REQUIRED = 70;
   const ULTIMATE_RANGE = 320;
   const STORAGE = {
@@ -61,6 +64,9 @@
     2: [['slash', 'rush', 'shot', 'slash', 'rush'], ['shot', 'slash', 'rush', 'slash', 'shot']],
     3: [['wave', 'shot', 'rush', 'slash', 'wave', 'rush'], ['rush', 'wave', 'slash', 'shot', 'rush', 'wave']],
     4: [['rush', 'wave', 'slash', 'shot', 'rush', 'wave'], ['wave', 'rush', 'shot', 'slash', 'wave', 'rush']],
+    // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
+    5: [['slash', 'rush', 'shot', 'wave', 'shot', 'slash', 'rush'],
+        ['rush', 'wave', 'slash', 'shot', 'wave', 'rush', 'slash']],
   };
   const RIFT_MOVES = {
     slash: { ...BOSS_MOVES.slash, label: '靈魂震爆', tell: 1.45, active: 0.22, recover: 1.3, damage: 22, range: 205 },
@@ -109,6 +115,13 @@
       this.load.spritesheet('fx_rift', 'assets/fx/fx_rift.png', { frameWidth: 128, frameHeight: 208 });
       this.load.spritesheet('fx_soulfire', 'assets/fx/fx_soulfire.png', { frameWidth: 64, frameHeight: 64 });
       this.load.spritesheet('fx_soulfire_hit', 'assets/fx/fx_soulfire_hit.png', { frameWidth: 96, frameHeight: 96 });
+      // P5「亡者归来」用的赤红火焰版：形状与判定时序和紫色版完全一致，只换配色
+      this.load.spritesheet('fx_soulburst_crimson', 'assets/fx/fx_soulburst_crimson.png', { frameWidth: 160, frameHeight: 160 });
+      this.load.spritesheet('fx_rune_crimson', 'assets/fx/fx_rune_crimson.png', { frameWidth: 192, frameHeight: 112 });
+      this.load.spritesheet('fx_rift_crimson', 'assets/fx/fx_rift_crimson.png', { frameWidth: 128, frameHeight: 208 });
+      this.load.spritesheet('fx_soulfire_crimson', 'assets/fx/fx_soulfire_crimson.png', { frameWidth: 64, frameHeight: 64 });
+      this.load.spritesheet('fx_soulfire_hit_crimson', 'assets/fx/fx_soulfire_hit_crimson.png', { frameWidth: 96, frameHeight: 96 });
+      this.load.spritesheet('fx_flame', 'assets/fx/fx_flame.png', { frameWidth: 48, frameHeight: 72 });
     }
 
     create() {
@@ -233,6 +246,13 @@
         ['fx-rift', 'fx_rift', 0, 9, 24, 0],
         ['fx-soulfire', 'fx_soulfire', 0, 7, 14, -1],
         ['fx-soulfire-hit', 'fx_soulfire_hit', 0, 7, 26, 0],
+        ['fx-soulburst-crimson', 'fx_soulburst_crimson', 0, 11, 30, 0],
+        ['fx-rune-charge-crimson', 'fx_rune_crimson', 0, 7, 6, 0],
+        ['fx-rune-burst-crimson', 'fx_rune_crimson', 8, 13, 18, 0],
+        ['fx-rift-crimson', 'fx_rift_crimson', 0, 9, 24, 0],
+        ['fx-soulfire-crimson', 'fx_soulfire_crimson', 0, 7, 14, -1],
+        ['fx-soulfire-hit-crimson', 'fx_soulfire_hit_crimson', 0, 7, 26, 0],
+        ['fx-flame', 'fx_flame', 0, 15, 18, -1],
       ];
       for (const [key, texture, start, end, frameRate, repeat] of defs) {
         this.anims.create({ key, frames: this.anims.generateFrameNumbers(texture, { start, end }), frameRate, repeat });
@@ -428,6 +448,7 @@
       this.entities = [];
       this.projectiles = [];
       this.telegraph && this.telegraph.clear();
+      this.stopBossFlames();
     }
 
     enterRoom(index, first = false) {
@@ -525,7 +546,15 @@
       const x = this.bossSprite.x;
       const bob = Math.sin(this.elapsed * 2.7) * 7;
       const pulse = 0.75 + Math.sin(this.elapsed * 3.7) * 0.12;
-      const phaseColor = this.boss.phase === 4 ? 0xff9af4 : this.boss.phase === 3 ? 0xc78cff : 0x9e77f5;
+      const phaseColor = this.boss.phase === 5 ? 0xff6a2a
+        : this.boss.phase === 4 ? 0xff9af4 : this.boss.phase === 3 ? 0xc78cff : 0x9e77f5;
+      const fiery = this.boss.phase === 5 && this.boss.revived;
+      // 火焰精灵跟随本体（bob 同步），非 P5 或已倒下时隐藏
+      if (this.bossFlames) {
+        for (const fl of this.bossFlames) {
+          fl.s.setPosition(x + fl.ox, FLOOR + fl.oy + bob).setVisible(fiery && this.boss.hp > 0);
+        }
+      }
       const cast = this.boss.mode === 'tell' || this.boss.mode === 'active';
       const reach = this.boss.mode === 'tell' ? 1.12 : this.boss.mode === 'active' ? 1.06 : 1;
       const base = FLOOR - 38 + bob;
@@ -615,8 +644,20 @@
       ], true);
       art.fillStyle(0x24192e, 1).fillTriangle(x - 27, headY + 1, x - 4, headY - 5, x - 20, headY + 13);
       art.fillStyle(0x24192e, 1).fillTriangle(x + 5, headY - 5, x + 28, headY + 1, x + 18, headY + 13);
-      art.fillStyle(flare, 0.98).fillCircle(x - 16, headY + 3, 5);
-      art.fillStyle(flare, 0.98).fillCircle(x + 17, headY + 3, 5);
+      if (fiery) {
+        // P5：眼窝换成跳动的火焰色，而不是平涂
+        const flick = 0.72 + Math.sin(this.elapsed * 17) * 0.18 + Math.sin(this.elapsed * 31) * 0.10;
+        art.fillStyle(0xff3a12, 0.55 * flick + 0.3).fillCircle(x - 16, headY + 3, 9);
+        art.fillStyle(0xff3a12, 0.55 * flick + 0.3).fillCircle(x + 17, headY + 3, 9);
+        art.fillStyle(0xffd27a, 0.95).fillCircle(x - 16, headY + 3, 4);
+        art.fillStyle(0xffd27a, 0.95).fillCircle(x + 17, headY + 3, 4);
+        // 骨架之间透出的火光
+        art.fillStyle(0xff5a1e, 0.42 * flick + 0.18).fillCircle(x, FLOOR - 206 + bob, 26);
+        art.fillStyle(0xffb45c, 0.5 * flick + 0.2).fillCircle(x, FLOOR - 200 + bob, 13);
+      } else {
+        art.fillStyle(flare, 0.98).fillCircle(x - 16, headY + 3, 5);
+        art.fillStyle(flare, 0.98).fillCircle(x + 17, headY + 3, 5);
+      }
       art.fillStyle(0x392941, 0.95).fillTriangle(x, headY + 5, x - 5, headY + 20, x + 5, headY + 20);
       art.lineStyle(3, 0x493458, 0.95).lineBetween(x - 15, headY + 27, x + 14, headY + 27);
       art.lineStyle(2, 0x41354d, 0.95).lineBetween(x - 26, headY + 15, x - 18, headY + 25);
@@ -1058,7 +1099,8 @@
       // 追魂冥火换成序列帧球体；影弩保留原来的纯色圆点样式。
       const soul = source === '追魂冥火';
       const core = soul ? null : this.add.circle(x, y, 8, color, 0.95).setDepth(14);
-      const fx = soul ? this.add.sprite(x, y, 'fx_soulfire', 0).setDepth(14).setScale(0.66).play('fx-soulfire') : null;
+      const sf = this.skillFx('fx-soulfire', 'fx_soulfire');
+      const fx = soul ? this.add.sprite(x, y, sf.tex, 0).setDepth(14).setScale(0.66).play(sf.anim) : null;
       this.projectiles.push({ x, y, direction, speed, damage, source, age: 0, core, fx, glow, color });
     }
 
@@ -1080,7 +1122,8 @@
           if (result !== 'none') {
             shot.dead = true;
             this.playSfx('sfx_soulfire_hit', 0.28);
-            this.spawnFx('fx-soulfire-hit', 'fx_soulfire_hit', shot.x, shot.y, 0.7, 25);
+            const sh = this.skillFx('fx-soulfire-hit', 'fx_soulfire_hit');
+            this.spawnFx(sh.anim, sh.tex, shot.x, shot.y, 0.7, 25);
           }
         }
       }
@@ -1111,6 +1154,17 @@
         }
       }
 
+      if (b.mode === 'revive') {
+        b.timer -= dt;
+        if (b.timer <= 0) {
+          b.mode = 'idle';
+          b.timer = 0.35;
+          b.sequence = 0;
+          this.setMessage('亡者归来：它的生命开始自燃——撑到烧尽，或者直接把它打散。');
+        }
+        return;
+      }
+
       if (b.mode === 'intro') {
         b.timer -= dt;
         if (b.timer <= 0) {
@@ -1123,6 +1177,19 @@
           this.setMessage(b.encounter === 'elite' ? '精英戰：幽影橫斬可格擋；正面近身抓準時機按 E 彈反。' : '裂隙巫妖現身：留意靈魂震爆、追魂冥火與地面亡魂印。');
         }
         return;
+      }
+
+      // P5 自燃烧条：血量被时间持续往下拉，但玩家输出可以把它压得更低
+      if (b.phase === 5 && b.revived) {
+        b.burn = Math.max(0, (b.burn ?? PHASE5_BURN_SECONDS) - dt);
+        const cap = b.maxHp * (b.burn / PHASE5_BURN_SECONDS);
+        if (b.hp > cap) b.hp = cap;
+        if (b.hp <= 0) {
+          b.hp = 0;
+          this.setMessage('亡者归来：烈焰烧尽，裂隙闭合。');
+          this.endRun(true);
+          return;
+        }
       }
 
       const dx = this.player.x - this.bossSprite.x;
@@ -1276,14 +1343,14 @@
     // P1 为基准，之后每升一阶收紧一档；P4 整套出招时长约为 P1 的 74%。
     // 影响 pre-warning(tell) 与收招(recover) —— 即玩家的反应窗口与输出窗口。
     phaseSpeed() {
-      const table = { 1: 1.0, 2: 0.90, 3: 0.82, 4: 0.74 };
+      const table = { 1: 1.0, 2: 0.90, 3: 0.82, 4: 0.74, 5: 0.55 };
       return table[this.boss.phase] || 1.0;
     }
 
     // 招式之间的间隔单独收得更紧：它只影响出招密度，不压缩玩家的反应时间，
     // 所以可以比 phaseSpeed 更激进，用来制造「越来越喘不过气」的压力。
     phaseGap() {
-      const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60 };
+      const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60, 5: 0.30 };
       return table[this.boss.phase] || 1.0;
     }
 
@@ -1325,10 +1392,12 @@
       if (move === 'wave' && b.encounter === 'rift') {
         // 蓄力段 8 帧 @6fps ≈ 1.33s，与 wave 的 tell(1.35s) 基本一致，
         // 播完即自动销毁，正好在判定瞬间让位给 fx-rune-burst。
-        this.spawnFx('fx-rune-charge', 'fx_rune', b.sealX, FLOOR - 30, 1.05, 6);
+        const rc = this.skillFx('fx-rune-charge', 'fx_rune');
+        this.spawnFx(rc.anim, rc.tex, b.sealX, FLOOR - 30, 1.05, 6);
       }
       if (move === 'rush' && b.encounter === 'rift') {
-        this.spawnFx('fx-rift', 'fx_rift', b.targetX, FLOOR - 104, 1, 9);
+        const rf = this.skillFx('fx-rift', 'fx_rift');
+        this.spawnFx(rf.anim, rf.tex, b.targetX, FLOOR - 104, 1, 9);
       }
       this.bossSprite.setFlipX(b.facing < 0);
       const slowSlash = move === 'slash' && b.slashTempo === 'slow';
@@ -1361,7 +1430,8 @@
           const range = b.slashTempo === 'fast' ? 145 : def.range;
           this.spawnBurst(this.bossSprite.x, FLOOR - 125, b.slashTempo === 'fast' ? 0xffbf86 : 0xb994ff, 20);
           // 序列帧环按实际判定半径缩放，保证画面读到的范围和 hitbox 一致
-          this.spawnFx('fx-soulburst', 'fx_soulburst', this.bossSprite.x, FLOOR - 24, range / 58, 9);
+          const sb = this.skillFx('fx-soulburst', 'fx_soulburst');
+          this.spawnFx(sb.anim, sb.tex, this.bossSprite.x, FLOOR - 24, range / 58, 9);
           if (distance <= range && this.isPlayerGrounded()) {
             this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range, guardable: true, parryable: true, parryRange: 150 });
           } else {
@@ -1403,7 +1473,8 @@
         if (b.encounter === 'rift') {
           const escaped = this.isPlayerAirborne() || Math.abs(this.player.x - b.sealX) > def.range;
           this.spawnBurst(b.sealX, FLOOR - 24, 0xcf83ff, 18);
-          this.spawnFx('fx-rune-burst', 'fx_rune', b.sealX, FLOOR - 30, 1.05, 6);
+          const rb = this.skillFx('fx-rune-burst', 'fx_rune');
+          this.spawnFx(rb.anim, rb.tex, b.sealX, FLOOR - 30, 1.05, 6);
           if (escaped) {
             this.stats.bossWhiffs += 1;
             this.stats.bossWhiffsByMove.wave += 1;
@@ -1664,14 +1735,55 @@
       this.cameras.main.shake(vulnerable ? 74 : 45, vulnerable ? 0.0022 : 0.0012);
       if (vulnerable) this.setMessage(`命中恢復中的Boss：-${damage}。這是完整輸出窗口。`);
       else this.setMessage(`命中Boss：-${damage}；招式收招時傷害更高。`);
-      if (b.hp <= 0) this.playSfx('sfx_boss_death', 0.5);
-      if (b.hp <= 0 && b.encounter === 'elite') {
-        this.showRiftStory();
+      if (b.hp <= 0) {
+        if (b.encounter === 'elite') {
+          this.showRiftStory();
+          return;
+        }
+        // 裂隙巫妖第一次被打空不会死：进入 P5「亡者归来」
+        if (!b.revived) {
+          this.playSfx('sfx_boss_death', 0.5);
+          this.beginBossRevive();
+          return;
+        }
+        // P5 里被打死 = 通关
+        this.playSfx('sfx_boss_death', 0.5);
+        this.endRun(true);
         return;
       }
       const nextPhase = b.hp <= b.maxHp / 4 ? 4 : b.hp <= b.maxHp / 2 ? 3 : b.hp <= b.maxHp * 3 / 4 ? 2 : 1;
-      if (b.encounter === 'rift' && nextPhase !== b.phase) this.transitionBossPhase(nextPhase);
-      if (b.hp <= 0) this.endRun(true);
+      // P5 是终结阶段，不再按血量切阶段
+      if (b.encounter === 'rift' && b.phase < 5 && nextPhase !== b.phase) this.transitionBossPhase(nextPhase);
+    }
+
+    // P5 复活演出：血量归零后不走 endRun，而是重置血量并点火。
+    beginBossRevive() {
+      const b = this.boss;
+      b.revived = true;
+      b.phase = 5;
+      b.mode = 'revive';
+      b.timer = 2.6;
+      b.hp = b.maxHp;
+      b.burn = PHASE5_BURN_SECONDS;
+      b.posture = 0;
+      b.move = '';
+      b.sequence = 0;
+      b.lastMove = '';
+      b.hitResolved = true;
+      b.facing = -1;
+      this.bossSprite.setFlipX(true);
+      this.bossLabel.setText('裂隙巫妖 · P5 · 亡者归来');
+      this.bossLabel.setColor('#ff8a5c');
+      // 演出：红闪 + 强震屏 + 一圈赤红冲击环 + 点火
+      this.cameras.main.flash(560, 150, 28, 14);
+      this.cameras.main.shake(620, 0.013);
+      this.playSfx('sfx_boss_phase', 0.52);
+      this.playSfx('sfx_rune_burst', 0.34);
+      const f = { anim: 'fx-soulburst-crimson', tex: 'fx_soulburst_crimson' };
+      this.spawnFx(f.anim, f.tex, this.bossSprite.x, FLOOR - 24, 4.2, 9);
+      this.startBossFlames();
+      this.setMessage('裂隙重新撕开——巫妖的骨架在火里站了起来：「你以为这就结束了？我不会放过你。」');
+      this.updateMoveCard('slash', '亡者归来');
     }
 
     enterRiftLord() {
@@ -1902,7 +2014,7 @@
       document.querySelector('#encounterName').textContent = STORAGE[this.room]?.name || '幽影峡谷';
       document.querySelector('#objectiveText').textContent = this.room === 'boss' ? this.bossGoal() : (STORAGE[this.room]?.goal || '继续前进。');
       document.querySelector('#encounterCopy').textContent = this.room === 'boss' ? (this.boss.encounter === 'elite' ? '幽影守卫作为精英拦路；击败后揭开裂隙巫妖的幕后身份。' : '巫妖使用灵魂震爆、分层冥火、落点换位与追踪符印；每招都有不同预警和躲法。') : this.roomCopy();
-      document.querySelector('#phaseLabel').textContent = this.room === 'boss' ? (this.boss.encounter === 'elite' ? '精英遭遇' : `裂隙巫妖阶段 ${this.boss.phase} / 4`) : (this.room === 'warmup' ? '热身教学' : this.room === 'pressure' ? '双威胁压力' : '检查点休整');
+      document.querySelector('#phaseLabel').textContent = this.room === 'boss' ? (this.boss.encounter === 'elite' ? '精英遭遇' : (this.boss.phase === 5 ? '亡者归来 · 终局' : `裂隙巫妖阶段 ${this.boss.phase} / 4`)) : (this.room === 'warmup' ? '热身教学' : this.room === 'pressure' ? '双威胁压力' : '检查点休整');
       document.querySelector('#progressLabel').textContent = this.room === 'boss' ? `${Math.ceil(this.boss.hp)} / ${this.boss.maxHp} HP` : `${Math.min(100, Math.floor((this.roomIndex / 3) * 100))}%`;
       document.querySelector('#combatStats').textContent = `命中 ${this.stats.hits} · 格挡 ${this.stats.blocks} · 弹反 ${this.stats.parries}`;
       document.querySelector('#statusDot').classList.toggle('live', this.status === 'run');
@@ -1920,6 +2032,7 @@
       if (this.boss.phase === 1) return '灵魂震爆是圆形法术，追魂冥火分层飞行；拉开距离并辨认弹道高度。';
       if (this.boss.phase === 2) return '幽魂换位先标记目的地；看见紫色圆环后立刻离开。';
       if (this.boss.phase === 3) return '亡魂印会锁定脚下位置；离开圆印或在爆发前跳起。';
+      if (this.boss.phase === 5) return '亡者归来：它的生命正在自燃，但也几乎不停手。撑到烈焰烧尽，或者抢先把它打散。';
       return '最终阶段魂火增至三层；震爆仍慢快交替，注意换位、符印与收招窗口。';
     }
 
@@ -2039,6 +2152,35 @@
     }
 
     // 播一次就自我销毁的特效精灵：不需要任何外部状态跟踪，房间切换也不会残留。
+    // P5（亡者归来）时把术式换成赤红火焰版；其余阶段保持幽紫。
+    // 形状/帧数/时序完全一致，所以判定范围与躲避手感不受换皮影响。
+    // 显式传动画键与贴图键：两者命名规则不同（动画用连字符、贴图用下划线），
+    // 靠字符串拼接很容易拼错，之前就踩过 fx-soulfire-hit 这个坑。
+    skillFx(anim, tex) {
+      const red = this.boss.phase === 5 && this.boss.revived;
+      return red ? { anim: `${anim}-crimson`, tex: `${tex}_crimson` } : { anim, tex };
+    }
+
+    // 眼窝与骨架之间的燃烧火焰。用循环帧精灵跟随巫妖，bob 与本体同步。
+    startBossFlames() {
+      this.stopBossFlames();
+      const mk = (ox, oy, k) => this.add.sprite(this.bossSprite.x, FLOOR + oy, 'fx_flame', 0)
+        .setOrigin(0.5, 1).setDepth(15).setScale(k).play('fx-flame');
+      this.bossFlames = [
+        { s: mk(-16, -283, 0.26), ox: -16, oy: -283 },
+        { s: mk(17, -283, 0.26), ox: 17, oy: -283 },
+        { s: mk(0, -216, 0.46), ox: 0, oy: -216 },
+        { s: mk(-7, -203, 0.36), ox: -7, oy: -203 },
+        { s: mk(8, -191, 0.32), ox: 8, oy: -191 },
+      ];
+    }
+
+    stopBossFlames() {
+      if (!this.bossFlames) return;
+      for (const f of this.bossFlames) { if (f.s && f.s.active) f.s.destroy(); }
+      this.bossFlames = null;
+    }
+
     spawnFx(anim, texture, x, y, scale = 1, depth = 25) {
       const fx = this.add.sprite(x, y, texture, 0).setDepth(depth).setScale(scale);
       fx.play(anim, true);
