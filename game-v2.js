@@ -23,6 +23,16 @@
     ['Death', 70, 40, 0], ['PowerUp', 72, 90, 0],
   ];
 
+  // 战斗音效键名。音频文件为本项目原创程序合成（44.1kHz 16-bit PCM WAV），
+  // 全部为项目原创，不含第三方素材。
+  const COMBAT_SFX = [
+    'sfx_slash_1', 'sfx_slash_2', 'sfx_slash_3', 'sfx_hit_flesh',
+    'sfx_guard_break', 'sfx_death', 'sfx_dodge', 'sfx_ultimate',
+    'sfx_boss_tell', 'sfx_soulburst', 'sfx_soulfire', 'sfx_soulfire_hit',
+    'sfx_shift', 'sfx_rune_mark', 'sfx_rune_burst', 'sfx_boss_hurt',
+    'sfx_boss_phase', 'sfx_boss_death', 'sfx_enemy_death',
+  ];
+
   const ATTACKS = [
     { anim: 'hero-attack', damage: 14, duration: 0.72, activeFrom: 0.24, activeTo: 0.37, reach: 112 },
     { anim: 'hero-attack', damage: 20, duration: 0.78, activeFrom: 0.30, activeTo: 0.46, reach: 124 },
@@ -85,12 +95,20 @@
       for (const [clip] of CLIPS) {
         this.load.atlas(clip, `assets/knight/${clip}.png`, `assets/knight/${clip}.json`);
       }
-      for (const clip of ['idle', 'run', 'attack', 'jump', 'dead']) {
+      for (const clip of ['idle', 'run', 'attack', 'jump', 'dead', 'hurt']) {
         this.load.spritesheet(`hero-${clip}`, `assets/hero/${clip}.png`, { frameWidth: 240, frameHeight: 315 });
       }
-      this.load.audio('sfx-parry', 'assets/audio/confirmation_001.ogg');
-      this.load.audio('sfx-hit', 'assets/audio/glass_001.ogg');
-      this.load.audio('sfx-guard', 'assets/audio/drop_001.ogg');
+      // 战斗音效：项目原创程序合成（见 素材来源.md）
+      this.load.audio('sfx-parry', 'assets/audio/sfx_parry.wav');
+      this.load.audio('sfx-hit', 'assets/audio/sfx_hurt.wav');
+      this.load.audio('sfx-guard', 'assets/audio/sfx_guard.wav');
+      for (const key of COMBAT_SFX) this.load.audio(key, `assets/audio/${key}.wav`);
+      // Boss 技能特效序列帧（本项目原创程序生成）
+      this.load.spritesheet('fx_soulburst', 'assets/fx/fx_soulburst.png', { frameWidth: 160, frameHeight: 160 });
+      this.load.spritesheet('fx_rune', 'assets/fx/fx_rune.png', { frameWidth: 192, frameHeight: 112 });
+      this.load.spritesheet('fx_rift', 'assets/fx/fx_rift.png', { frameWidth: 128, frameHeight: 208 });
+      this.load.spritesheet('fx_soulfire', 'assets/fx/fx_soulfire.png', { frameWidth: 64, frameHeight: 64 });
+      this.load.spritesheet('fx_soulfire_hit', 'assets/fx/fx_soulfire_hit.png', { frameWidth: 96, frameHeight: 96 });
     }
 
     create() {
@@ -99,6 +117,7 @@
       this.physics.world.setBoundsCollision(true, true, true, false);
       this.makeAnimations();
       this.makeHeroAnimations();
+      this.makeFxAnimations();
       this.floorBody = this.add.rectangle(WIDTH / 2, FLOOR + 35, WIDTH + 60, 70, 0x000000, 0);
       this.physics.add.existing(this.floorBody, true);
 
@@ -203,10 +222,29 @@
       });
     }
 
+    makeFxAnimations() {
+      // [动画键, 贴图键, 起始帧, 结束帧, 帧率, 是否循环]
+      const defs = [
+        ['fx-soulburst', 'fx_soulburst', 0, 11, 30, 0],
+        // 亡魂印拆成两段：蓄力段播完停在帧 7（蓄满），爆发段单独触发，
+        // 这样 burst 的那一帧才能和 resolveBossMove 的判定瞬间对齐。
+        ['fx-rune-charge', 'fx_rune', 0, 7, 6, 0],
+        ['fx-rune-burst', 'fx_rune', 8, 13, 18, 0],
+        ['fx-rift', 'fx_rift', 0, 9, 24, 0],
+        ['fx-soulfire', 'fx_soulfire', 0, 7, 14, -1],
+        ['fx-soulfire-hit', 'fx_soulfire_hit', 0, 7, 26, 0],
+      ];
+      for (const [key, texture, start, end, frameRate, repeat] of defs) {
+        this.anims.create({ key, frames: this.anims.generateFrameNumbers(texture, { start, end }), frameRate, repeat });
+      }
+    }
+
     makeHeroAnimations() {
       const clips = [
         ['idle', 10, 11, -1], ['run', 10, 16, -1],
         ['attack', 10, 15, 0], ['jump', 10, 14, 0], ['dead', 10, 12, 0],
+        // 受击：10 帧 / 24fps ≈ 0.417s，与 playerDamage 里的 p.hurtTimer = 0.42 对齐
+        ['hurt', 10, 24, 0],
       ];
       for (const [clip, end, frameRate, repeat] of clips) {
         this.anims.create({ key: `hero-${clip}`, frames: this.anims.generateFrameNumbers(`hero-${clip}`, { start: 0, end: end - 1 }), frameRate, repeat });
@@ -750,6 +788,7 @@
 
       if (guardHeld && !blocking && p.stamina <= 0 && p.guardBreak <= 0) {
         p.guardBreak = 0.42;
+        this.playSfx('sfx_guard_break', 0.34);
         this.setMessage('耐力耗尽：格挡破防，暂时不能防守。');
       }
       if (blocking) {
@@ -763,7 +802,7 @@
       if (p.ultimateTimer > 0) {
         this.player.play('hero-attack', true);
       } else if (p.hurtTimer > 0) {
-        this.player.play('hero-idle', true);
+        this.player.play('hero-hurt', true);
       } else if (p.guardBreak > 0) {
         this.player.play('hero-jump', true);
       } else if (p.parryAnim > 0) {
@@ -774,8 +813,9 @@
         else if (Math.abs(this.player.body.velocity.x) > 25) this.player.play('hero-run', true);
         else this.player.play('hero-idle', true);
       }
-      if (p.hurtTimer > 0) this.player.setTint(0xffded0);
-      else if (p.ultimateTimer > 0) this.player.setTint(0xffd77a);
+      // 受击白闪已烘焙进 hero-hurt 序列帧（冲击帧整帧白化），
+      // 这里不再叠加 tint，否则 0.42s 内会被双重染色、盔甲细节全糊。
+      if (p.ultimateTimer > 0) this.player.setTint(0xffd77a);
       else this.player.clearTint();
 
       if (this.room !== 'boss' && this.player.x > 882 && this.entities.length === 0) {
@@ -824,6 +864,8 @@
       const move = ATTACKS[index];
       p.comboIndex = index;
       p.attack = { ...move, timer: 0, hit: false, queued: false, index, facing: p.facing };
+      // 三段连击各有一版音高递增的挥砍声，听感上能分辨连段进度
+      this.playSfx(`sfx_slash_${index + 1}`, 0.30);
       this.player.play(move.anim, true);
       p.attackCooldown = 0.13;
     }
@@ -892,6 +934,7 @@
         const enemy = this.entities.find((item) => !item.dead && item.sprite === target.sprite);
         if (!enemy) return;
         enemy.hp -= attack.damage;
+        this.playSfx('sfx_hit_flesh', 0.32);
         enemy.hurtTimer = 0.16;
         enemy.sprite.body.setVelocityX(0);
         enemy.sprite.play('knight-impact', true);
@@ -999,6 +1042,7 @@
 
     killEnemy(enemy) {
       enemy.dead = true;
+      this.playSfx('sfx_enemy_death', 0.34);
       enemy.sprite.body.enable = false;
       enemy.sprite.play('knight-death', true);
       this.stats.enemyKills += 1;
@@ -1009,16 +1053,21 @@
 
     spawnProjectile(x, y, direction, speed, damage, source) {
       const color = source === '影弩' ? 0xe6a06c : source === '追魂冥火' ? 0xb98cff : 0xe17d9b;
+      if (source === '追魂冥火') this.playSfx('sfx_soulfire', 0.30);
       const glow = this.add.ellipse(x, y, 38, 22, color, 0.25).setDepth(13);
-      const core = this.add.circle(x, y, 8, color, 0.95).setDepth(14);
-      this.projectiles.push({ x, y, direction, speed, damage, source, age: 0, core, glow, color });
+      // 追魂冥火换成序列帧球体；影弩保留原来的纯色圆点样式。
+      const soul = source === '追魂冥火';
+      const core = soul ? null : this.add.circle(x, y, 8, color, 0.95).setDepth(14);
+      const fx = soul ? this.add.sprite(x, y, 'fx_soulfire', 0).setDepth(14).setScale(0.66).play('fx-soulfire') : null;
+      this.projectiles.push({ x, y, direction, speed, damage, source, age: 0, core, fx, glow, color });
     }
 
     updateProjectiles(dt) {
       for (const shot of this.projectiles) {
         shot.age += dt;
         shot.x += shot.direction * shot.speed * dt;
-        shot.core.setPosition(shot.x, shot.y);
+        if (shot.core) shot.core.setPosition(shot.x, shot.y);
+        if (shot.fx) shot.fx.setPosition(shot.x, shot.y);
         shot.glow.setPosition(shot.x, shot.y);
         shot.glow.setScale(1 + Math.sin(shot.age * 17) * 0.08);
         if (shot.age > 4 || shot.x < 20 || shot.x > WIDTH - 20) {
@@ -1028,11 +1077,15 @@
         const close = Math.abs(shot.x - this.player.x) < 29 && Math.abs(shot.y - (this.player.y - 72)) < 48;
         if (close) {
           const result = this.resolveIncoming({ source: shot.source, damage: shot.damage, attackerX: shot.x - shot.direction * 18, range: 65, guardable: true, parryable: false, parryRange: 0 });
-          if (result !== 'none') shot.dead = true;
+          if (result !== 'none') {
+            shot.dead = true;
+            this.playSfx('sfx_soulfire_hit', 0.28);
+            this.spawnFx('fx-soulfire-hit', 'fx_soulfire_hit', shot.x, shot.y, 0.7, 25);
+          }
         }
       }
       for (const shot of this.projectiles) {
-        if (shot.dead) { shot.core.destroy(); shot.glow.destroy(); }
+        if (shot.dead) this.clearProjectile(shot);
       }
       this.projectiles = this.projectiles.filter((shot) => !shot.dead);
     }
@@ -1245,6 +1298,9 @@
       const tell = move === 'slash' && b.slashTempo === 'slow' ? 1.45 : move === 'slash' && b.slashTempo === 'fast' ? 0.82 : moveDef.tell;
       b.timer = tell * this.phaseSpeed();
       b.hitResolved = false;
+      // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
+      this.playSfx('sfx_boss_tell', 0.26);
+      if (move === 'wave') this.playSfx('sfx_rune_mark', 0.24);
       b.rushHit = false;
       b.facing = Math.sign(this.player.x - this.bossSprite.x) || -1;
       const dashLimit = 295;
@@ -1255,6 +1311,14 @@
           ? clamp(this.player.x, Math.max(90, this.bossSprite.x - dashLimit), Math.min(870, this.bossSprite.x + dashLimit))
         : clamp(this.player.x, 90, 870);
       b.sealX = clamp(this.player.x, 90, 870);
+      if (move === 'wave' && b.encounter === 'rift') {
+        // 蓄力段 8 帧 @6fps ≈ 1.33s，与 wave 的 tell(1.35s) 基本一致，
+        // 播完即自动销毁，正好在判定瞬间让位给 fx-rune-burst。
+        this.spawnFx('fx-rune-charge', 'fx_rune', b.sealX, FLOOR - 30, 1.05, 6);
+      }
+      if (move === 'rush' && b.encounter === 'rift') {
+        this.spawnFx('fx-rift', 'fx_rift', b.targetX, FLOOR - 104, 1, 9);
+      }
       this.bossSprite.setFlipX(b.facing < 0);
       const slowSlash = move === 'slash' && b.slashTempo === 'slow';
       this.playBossAnimation(b.encounter === 'rift' || move === 'wave' || slowSlash ? 'knight-powerup' : 'knight-attack1');
@@ -1277,11 +1341,16 @@
     resolveBossMove(move) {
       const b = this.boss;
       const def = this.bossMoves()[move];
+      // 出手音与上面的预警音成对，形成“预备→释放”的听觉对比
+      const release = { slash: 'sfx_soulburst', shot: 'sfx_soulfire', rush: 'sfx_shift', wave: 'sfx_rune_burst' }[move];
+      if (release) this.playSfx(release, 0.34);
       if (move === 'slash') {
         if (b.encounter === 'rift') {
           const distance = Math.abs(this.player.x - this.bossSprite.x);
           const range = b.slashTempo === 'fast' ? 145 : def.range;
           this.spawnBurst(this.bossSprite.x, FLOOR - 125, b.slashTempo === 'fast' ? 0xffbf86 : 0xb994ff, 20);
+          // 序列帧环按实际判定半径缩放，保证画面读到的范围和 hitbox 一致
+          this.spawnFx('fx-soulburst', 'fx_soulburst', this.bossSprite.x, FLOOR - 24, range / 58, 9);
           if (distance <= range && this.isPlayerGrounded()) {
             this.resolveIncoming({ source: def.label, damage: def.damage, attackerX: this.bossSprite.x, range, guardable: true, parryable: true, parryRange: 150 });
           } else {
@@ -1323,6 +1392,7 @@
         if (b.encounter === 'rift') {
           const escaped = this.isPlayerAirborne() || Math.abs(this.player.x - b.sealX) > def.range;
           this.spawnBurst(b.sealX, FLOOR - 24, 0xcf83ff, 18);
+          this.spawnFx('fx-rune-burst', 'fx_rune', b.sealX, FLOOR - 30, 1.05, 6);
           if (escaped) {
             this.stats.bossWhiffs += 1;
             this.stats.bossWhiffsByMove.wave += 1;
@@ -1477,7 +1547,7 @@
       this.spawnBurst(this.player.x, this.player.y - 76, 0xe58b79, 10);
       this.floatText(this.player.x, this.player.y - 116, `-${damage}`, '#f29a85');
       this.setMessage(`${source} 命中：生命 -${damage}；受擊後有短暫保護時間。`);
-      this.player.play('hero-idle', true);
+      this.player.play('hero-hurt', true);
       if (p.hp <= 0) this.endRun(false);
     }
 
@@ -1498,6 +1568,7 @@
       if (this.status !== 'run' || p.dodgeCooldown > 0 || p.guardBreak > 0 || p.hurtTimer > 0 || p.ultimateTimer > 0 || p.attack) return;
       p.dodgeTimer = 0.25;
       p.dodgeCooldown = 0.72;
+      this.playSfx('sfx_dodge', 0.28);
       p.dodgeSuccessCounted = false;
       if (p.invuln <= 0.25) {
         p.invuln = 0.25;
@@ -1544,9 +1615,9 @@
       this.player.play('hero-attack', true);
       this.player.setTint(0xffe9a8);
       this.tweens.add({ targets: this.player, scaleX: 0.64 * 1.18, scaleY: 0.64 * 1.18, duration: 130, yoyo: true, ease: 'Quad.Out', onComplete: () => this.player.clearTint() });
-      // 双音效叠加：清脆确认音 + 破碎命中音
-      this.playSfx('sfx-parry', 0.42);
-      this.time.delayedCall(90, () => this.playSfx('sfx-hit', 0.38));
+      // 奥义：低频蓄力轰鸣 + 延迟的命中层，取代原来借用的界面音效
+      this.playSfx('sfx_ultimate', 0.45);
+      this.time.delayedCall(150, () => this.playSfx('sfx_hit_flesh', 0.34));
       // 金色全屏闪光 + 强震屏 + 短暂慢动作
       this.cameras.main.flash(200, 255, 214, 120);
       this.cameras.main.shake(260, 0.009);
@@ -1573,6 +1644,7 @@
       b.hp = Math.max(0, b.hp - damage);
       b.regenIdle = 0; // 命中打断回血
       b.hurtTimer = 0.15;
+      this.playSfx('sfx_boss_hurt', 0.26);
       b.posture = Math.min(100, b.posture + 5);
       this.bossSprite.setTint(0xffdfc4);
       this.time.delayedCall(90, () => { if (this.bossSprite.active) this.boss.encounter === 'rift' ? this.bossSprite.clearTint() : this.bossSprite.setTint(0xe7798e); });
@@ -1581,6 +1653,7 @@
       this.cameras.main.shake(vulnerable ? 74 : 45, vulnerable ? 0.0022 : 0.0012);
       if (vulnerable) this.setMessage(`命中恢復中的Boss：-${damage}。這是完整輸出窗口。`);
       else this.setMessage(`命中Boss：-${damage}；招式收招時傷害更高。`);
+      if (b.hp <= 0) this.playSfx('sfx_boss_death', 0.5);
       if (b.hp <= 0 && b.encounter === 'elite') {
         this.showRiftStory();
         return;
@@ -1592,7 +1665,7 @@
 
     enterRiftLord() {
       const b = this.boss;
-      for (const shot of this.projectiles) { shot.core.destroy(); shot.glow.destroy(); }
+      for (const shot of this.projectiles) this.clearProjectile(shot);
       this.projectiles = [];
       b.encounter = 'rift';
       b.maxHp = BOSS_MAX_HP;
@@ -1612,6 +1685,7 @@
       this.bossSprite.setPosition(746, FLOOR).setFlipX(true).setAngle(0);
       this.bossShadow.setFillStyle(0x211636, 0.68);
       this.updateBossMoveCardCopy();
+      this.playSfx('sfx_boss_phase', 0.45);
       this.cameras.main.flash(380, 115, 70, 190);
       this.cameras.main.shake(300, 0.007);
       this.spawnBurst(746, FLOOR - 130, 0xb374f5, 36);
@@ -1622,6 +1696,7 @@
     transitionBossPhase(phase) {
       const b = this.boss;
       b.phase = phase;
+      this.playSfx('sfx_boss_phase', 0.42);
       b.mode = 'transition';
       b.timer = 1.15;
       b.sequence = 0;
@@ -1893,7 +1968,10 @@
           dodgeSuccessRate: this.stats.dodgeAttempts ? this.stats.dodgeSuccesses / this.stats.dodgeAttempts : null,
         },
       };
-      if (!win) this.player.play('hero-dead', true);
+      if (!win) {
+        this.player.play('hero-dead', true);
+        this.playSfx('sfx_death', 0.5);
+      }
       document.querySelector('#overlayTitle').textContent = win ? '裂隙巫妖被击败' : '试炼中断';
       document.querySelector('#overlayText').textContent = '可以填写试玩反馈：哪些招式容易读、哪次受击不公平、格挡与弹反是否值得使用？';
       document.querySelector('#startBtn').innerHTML = '再跑完整试炼 <b>↻</b>';
@@ -1947,6 +2025,20 @@
       this.tweens.add({ targets: g, alpha: 0, duration: 165, onComplete: () => g.destroy() });
       const targetX = this.room === 'boss' ? this.bossSprite.x : (this.nearestEnemy()?.x ?? x);
       this.spawnBurst((x + targetX) / 2, y, color, index === 2 ? 9 : 6);
+    }
+
+    // 播一次就自我销毁的特效精灵：不需要任何外部状态跟踪，房间切换也不会残留。
+    spawnFx(anim, texture, x, y, scale = 1, depth = 25) {
+      const fx = this.add.sprite(x, y, texture, 0).setDepth(depth).setScale(scale);
+      fx.play(anim, true);
+      fx.once('animationcomplete', () => fx.destroy());
+      return fx;
+    }
+
+    clearProjectile(shot) {
+      if (shot.core) shot.core.destroy();
+      if (shot.fx) shot.fx.destroy();
+      shot.glow.destroy();
     }
 
     spawnBurst(x, y, color, amount) {
