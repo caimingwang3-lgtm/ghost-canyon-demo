@@ -2719,7 +2719,20 @@
       const x = 206, y = 28, width = 548;
       g.fillStyle(0x090e16, 0.88).fillRoundedRect(x, y, width, 13, 5);
       const rift = this.boss.encounter === 'rift';
-      g.fillStyle(rift ? (this.boss.phase === 4 ? 0xf5a2ff : this.boss.phase === 3 ? 0xc98aff : this.boss.phase === 2 ? 0x9f7bea : 0x8068cb) : 0xe17b83, 1).fillRoundedRect(x + 2, y + 2, (width - 4) * (this.boss.hp / this.boss.maxHp), 9, 4);
+      // P5「亡者归来」的血条必须也是烧着的。
+      // 整场 P5 的视觉语言都换成了火（焚身形态、赤红术式、烈焰残渣、红色暗角），
+      // 血条却还停在幽紫——这是自相矛盾的，玩家一眼看得出"没做完"。
+      const p5bar = rift && this.boss.phase === 5 && this.boss.revived;
+      const barColor = p5bar
+        ? (Math.sin(this.elapsed * 9) > 0 ? 0xff6a1e : 0xffa63a)
+        : rift
+          ? (this.boss.phase === 4 ? 0xf5a2ff : this.boss.phase === 3 ? 0xc98aff : this.boss.phase === 2 ? 0x9f7bea : 0x8068cb)
+          : 0xe17b83;
+      if (p5bar) {
+        // 条底垫一层跳动的火光，读起来像"这条血正在烧"
+        g.fillStyle(0xff4d14, 0.22 + Math.sin(this.elapsed * 11) * 0.10).fillRoundedRect(x - 2, y, width + 4, 17, 6);
+      }
+      g.fillStyle(barColor, 1).fillRoundedRect(x + 2, y + 2, (width - 4) * (this.boss.hp / this.boss.maxHp), 9, 4);
       g.lineStyle(1, 0xd9c9b3, 0.62).strokeRoundedRect(x, y, width, 13, 5);
       // ④ 架势条：原来只有 6px 高、没有刻度，玩家读不出"还差多少破架势"。
       // 现在加粗到 9px，并在 60% / 100% 处画刻度（两次弹反即破）。
