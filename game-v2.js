@@ -1221,14 +1221,14 @@
         b.timer -= dt;
         if (b.timer <= 0) {
           b.mode = 'idle';
-          b.timer = b.encounter === 'elite' ? 0.46 : 0.62;
+          b.timer = b.encounter === 'elite' ? 0.46 : 0.62 * this.phaseGap();
           b.move = '';
         }
       } else if (b.mode === 'broken') {
         b.timer -= dt;
         if (b.timer <= 0) {
           b.mode = 'idle';
-          b.timer = b.encounter === 'elite' ? 0.46 : 0.62;
+          b.timer = b.encounter === 'elite' ? 0.46 : 0.62 * this.phaseGap();
           b.move = '';
           b.posture = 0;
           this.setMessage('守衛恢復架勢；留意下一輪招式序列。');
@@ -1272,8 +1272,19 @@
       this.setMessage(`【策划测试】已跳至 P${phase}，Boss 血量设为 ${testHp[phase]}。`);
     }
 
+    // 阶段节奏倍率：返回的是「时长倍率」，越小越快。
+    // P1 为基准，之后每升一阶收紧一档；P4 整套出招时长约为 P1 的 74%。
+    // 影响 pre-warning(tell) 与收招(recover) —— 即玩家的反应窗口与输出窗口。
     phaseSpeed() {
-      return 1.0;
+      const table = { 1: 1.0, 2: 0.90, 3: 0.82, 4: 0.74 };
+      return table[this.boss.phase] || 1.0;
+    }
+
+    // 招式之间的间隔单独收得更紧：它只影响出招密度，不压缩玩家的反应时间，
+    // 所以可以比 phaseSpeed 更激进，用来制造「越来越喘不过气」的压力。
+    phaseGap() {
+      const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60 };
+      return table[this.boss.phase] || 1.0;
     }
 
     startBossMove() {
