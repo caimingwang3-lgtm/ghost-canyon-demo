@@ -121,7 +121,7 @@
       this.load.spritesheet('fx_rift_crimson', 'assets/fx/fx_rift_crimson.png', { frameWidth: 128, frameHeight: 208 });
       this.load.spritesheet('fx_soulfire_crimson', 'assets/fx/fx_soulfire_crimson.png', { frameWidth: 64, frameHeight: 64 });
       this.load.spritesheet('fx_soulfire_hit_crimson', 'assets/fx/fx_soulfire_hit_crimson.png', { frameWidth: 96, frameHeight: 96 });
-      this.load.spritesheet('fx_flame', 'assets/fx/fx_flame.png', { frameWidth: 48, frameHeight: 72 });
+      this.load.spritesheet('fx_flame', 'assets/fx/fx_flame.png', { frameWidth: 80, frameHeight: 120 });
     }
 
     create() {
@@ -428,6 +428,7 @@
       document.querySelector('#startBtn').innerHTML = '完整试炼 <b>→</b>';
       document.querySelector('#bossBtn').innerHTML = '直达 Boss <b>↗</b>';
       document.querySelector('#resultSummary').hidden = true;
+      this.playMusic('normal');
       if (this.debugMode) this.setMessage(`${this.godMode ? '【无敌策划测试】' : '【承伤策划测试】'}快捷键：1/2/3/4 切换巫妖阶段，Q 补满能量，H 回满血。`);
       else this.setMessage(mode === 'boss' ? 'Boss 练习模式：生命与耐力已补满，先认清首领招式预警。' : '热身区：单一近战敌人先教会你观察抬剑与近身距离。');
       if (mode === 'boss' || (this.debugMode && debugRoom === 'boss')) {
@@ -575,6 +576,12 @@
         const runeY = FLOOR - 194 + bob + Math.sin(angle + Math.PI / 8) * 128;
         aura.lineStyle(2, 0xe9d6ff, 0.48).lineBetween(runeX - 5, runeY, runeX + 5, runeY);
         aura.lineBetween(runeX, runeY - 5, runeX, runeY + 5);
+      }
+
+      // ===== P5「焚身形态」：完全另画一个本体，不再是紫袍巫妖加几簇火 =====
+      if (fiery && this.boss.hp > 0) {
+        this.drawBossFiery(art, aura, x, bob, phaseColor);
+        return;
       }
 
       art.fillStyle(0x0c0914, 0.96).fillPoints([
@@ -1154,6 +1161,9 @@
         }
       }
 
+      if (b.mode === 'burnout') { b.timer -= dt; return; }
+      this.updateBossEmbers(dt);
+
       if (b.mode === 'revive') {
         b.timer -= dt;
         if (b.timer <= 0) {
@@ -1185,9 +1195,7 @@
         const cap = b.maxHp * (b.burn / PHASE5_BURN_SECONDS);
         if (b.hp > cap) b.hp = cap;
         if (b.hp <= 0) {
-          b.hp = 0;
-          this.setMessage('亡者归来：烈焰烧尽，裂隙闭合。');
-          this.endRun(true);
+          this.beginBossBurnout();
           return;
         }
       }
@@ -1746,9 +1754,8 @@
           this.beginBossRevive();
           return;
         }
-        // P5 里被打死 = 通关
-        this.playSfx('sfx_boss_death', 0.5);
-        this.endRun(true);
+        // P5 里被打死 = 通关，同样走燃尽演出
+        this.beginBossBurnout();
         return;
       }
       const nextPhase = b.hp <= b.maxHp / 4 ? 4 : b.hp <= b.maxHp / 2 ? 3 : b.hp <= b.maxHp * 3 / 4 ? 2 : 1;
@@ -1756,13 +1763,123 @@
       if (b.encounter === 'rift' && b.phase < 5 && nextPhase !== b.phase) this.transitionBossPhase(nextPhase);
     }
 
-    // P5 复活演出：血量归零后不走 endRun，而是重置血量并点火。
+    // P5「焚身形态」。整体放大、剪影完全不同：焦黑残袍 + 外露发光骨架 +
+    // 裂开的头骨 + 燃烧利爪 + 环绕骨片。这里只用 Graphics 画几何，
+    // 火焰交给火焰精灵，两者叠在一起才有"整个人烧起来了"的观感。
+    drawBossFiery(art, aura, x, bob, phaseColor) {
+      const S = 1.18;
+      const P = (dx, dy) => ({ x: x + dx * S, y: FLOOR + bob + dy * S });
+      const t = this.elapsed;
+      const flick = 0.74 + Math.sin(t * 17) * 0.16 + Math.sin(t * 31) * 0.10;
+
+      // --- 环绕的骨片：随时间公转，带明暗变化
+      for (let i = 0; i < 7; i += 1) {
+        const a = t * 0.85 + i * (Math.PI * 2 / 7);
+        const bx = x + Math.cos(a) * 118 * S;
+        const by = FLOOR - 188 + bob + Math.sin(a) * 46;
+        const lit = Math.sin(a) > 0 ? 0.95 : 0.45;
+        const s2 = 0.8 + Math.sin(a) * 0.25;
+        art.fillStyle(0xe6dcf0, lit).fillPoints([
+          { x: bx - 8 * s2, y: by }, { x: bx, y: by - 5 * s2 },
+          { x: bx + 8 * s2, y: by }, { x: bx + 2 * s2, y: by + 5 * s2 },
+          { x: bx - 4 * s2, y: by + 5 * s2 },
+        ], true);
+      }
+
+      // --- 焦黑残袍：比原来短，下摆烧成不规则缺口
+      art.fillStyle(0x120a14, 0.98).fillPoints([
+        P(-50, -152), P(-72, -116), P(-56, -74), P(-78, -34), P(-44, -8),
+        P(-16, -38), P(0, -10), P(14, -40), P(44, -6), P(76, -36),
+        P(58, -80), P(74, -118), P(48, -154),
+      ], true);
+      // 残袍上透出的余烬缝
+      for (let k = 0; k < 5; k += 1) {
+        const ex = -44 + k * 22;
+        art.fillStyle(0xff5a1e, 0.30 * flick + 0.18).fillPoints([
+          P(ex, -140), P(ex + 9, -104), P(ex + 4, -60), P(ex - 5, -96),
+        ], true);
+      }
+
+      // --- 外露的发光脊椎与肋骨（发白热，是视觉重点）
+      art.fillStyle(0xff8a3a, 0.30 * flick + 0.22).fillCircle(x, FLOOR - 214 + bob, 40);
+      art.lineStyle(7, 0xff6a24, 0.9).lineBetween(P(0, -252).x, P(0, -252).y, P(0, -170).x, P(0, -170).y);
+      art.lineStyle(3, 0xfff0d0, 0.95).lineBetween(P(0, -252).x, P(0, -252).y, P(0, -170).x, P(0, -170).y);
+      for (let rib = 0; rib < 6; rib += 1) {
+        const ry = -248 + rib * 15;
+        const w = 30 + rib * 3;
+        art.lineStyle(4, 0xffb45c, 0.92).beginPath();
+        art.moveTo(P(-4, ry).x, P(-4, ry).y).lineTo(P(-w, ry + 9).x, P(-w, ry + 9).y).lineTo(P(-w - 10, ry + 20).x, P(-w - 10, ry + 20).y);
+        art.moveTo(P(4, ry).x, P(4, ry).y).lineTo(P(w, ry + 9).x, P(w, ry + 9).y).lineTo(P(w + 10, ry + 20).x, P(w + 10, ry + 20).y);
+        art.strokePath();
+        // 肋间透出的火
+        if (rib < 5) {
+          art.fillStyle(0xff4d14, 0.26 * flick + 0.14).fillCircle(P(0, ry + 8).x, P(0, ry + 8).y, 15);
+        }
+      }
+      // 胸骨核心：一颗白热的炉心
+      art.fillStyle(0xff3a10, 0.42 * flick + 0.28).fillCircle(P(0, -206).x, P(0, -206).y, 20);
+      art.fillStyle(0xffd27a, 0.98).fillCircle(P(0, -206).x, P(0, -206).y, 9);
+      art.fillStyle(0xfffdf2, 1).fillCircle(P(0, -206).x, P(0, -206).y, 4);
+
+      // --- 拉长的燃烧双臂 + 利爪
+      for (const side of [-1, 1]) {
+        art.lineStyle(7, 0x1a0f1c, 1).lineBetween(P(side * 38, -250).x, P(side * 38, -250).y, P(side * 104, -226).x, P(side * 104, -226).y);
+        art.lineStyle(4, 0xd9cbe2, 0.9).lineBetween(P(side * 38, -250).x, P(side * 38, -250).y, P(side * 104, -226).x, P(side * 104, -226).y);
+        for (let c = -1; c <= 1; c += 1) {
+          art.lineStyle(3, 0xffc078, 0.9).lineBetween(
+            P(side * 104, -226).x, P(side * 104, -226).y,
+            P(side * (120 + c * 6), -204 + c * 10).x, P(side * (120 + c * 6), -204 + c * 10).y);
+        }
+      }
+
+      // --- 裂开的头骨：外轮廓加深，顶部开一道裂口喷火
+      const headY = FLOOR - 336 + bob;
+      art.fillStyle(0x140c18, 1).fillPoints([
+        { x: x - 50, y: headY + 47 }, { x: x - 61, y: headY + 11 },
+        { x: x - 45, y: headY - 26 }, { x: x - 20, y: headY - 46 },
+        { x: x + 20, y: headY - 46 }, { x: x + 48, y: headY - 19 },
+        { x: x + 58, y: headY + 18 }, { x: x + 37, y: headY + 46 },
+      ], true);
+      art.fillStyle(0xd8cfe0, 0.96).fillPoints([
+        { x: x - 36, y: headY + 30 }, { x: x - 40, y: headY + 5 },
+        { x: x - 26, y: headY - 20 }, { x: x - 8, y: headY - 29 },
+        { x: x + 21, y: headY - 24 }, { x: x + 35, y: headY + 1 },
+        { x: x + 27, y: headY + 29 }, { x: x + 11, y: headY + 40 },
+        { x: x - 14, y: headY + 40 },
+      ], true);
+      // 顶部裂缝 + 喷出的火
+      art.fillStyle(0xff4d14, 0.5 * flick + 0.3).fillPoints([
+        { x: x - 14, y: headY - 30 }, { x: x + 2, y: headY - 58 },
+        { x: x + 16, y: headY - 26 }, { x: x + 4, y: headY - 12 },
+      ], true);
+      art.fillStyle(0xfff0c8, 0.95).fillPoints([
+        { x: x - 6, y: headY - 26 }, { x: x + 2, y: headY - 42 },
+        { x: x + 8, y: headY - 24 }, { x: x + 2, y: headY - 16 },
+      ], true);
+      // 眼窝：炽白核心
+      art.fillStyle(0xff3a12, 0.45 * flick + 0.35).fillCircle(x - 18, headY + 3, 12);
+      art.fillStyle(0xff3a12, 0.45 * flick + 0.35).fillCircle(x + 19, headY + 3, 12);
+      art.fillStyle(0xffe9a8, 1).fillCircle(x - 18, headY + 3, 5);
+      art.fillStyle(0xffe9a8, 1).fillCircle(x + 19, headY + 3, 5);
+      // 牙关
+      for (let k = -2; k <= 2; k += 1) {
+        art.lineStyle(2, 0xffb45c, 0.8).lineBetween(x + k * 7, headY + 24, x + k * 7, headY + 31);
+      }
+
+      // --- 脚下的火环
+      art.fillStyle(0xff4d14, 0.22 * flick + 0.12).fillCircle(x, FLOOR + bob - 8, 96 * S);
+    }
+
+    // P5 复活过场：4.4 秒七个节拍。
+    // 原来是"闪一下 + 一行字"，玩家来不及反应就进了 P5；
+    // 这里压暗画面 + 逐句台词 + 火焰爆发，把"它变成了别的东西"讲清楚。
     beginBossRevive() {
       const b = this.boss;
+      const bx = this.bossSprite.x;
       b.revived = true;
       b.phase = 5;
       b.mode = 'revive';
-      b.timer = 2.6;
+      b.timer = 4.4;
       b.hp = b.maxHp;
       b.burn = PHASE5_BURN_SECONDS;
       b.posture = 0;
@@ -1774,16 +1891,115 @@
       this.bossSprite.setFlipX(true);
       this.bossLabel.setText('裂隙巫妖 · P5 · 亡者归来');
       this.bossLabel.setColor('#ff8a5c');
-      // 演出：红闪 + 强震屏 + 一圈赤红冲击环 + 点火
-      this.cameras.main.flash(560, 150, 28, 14);
-      this.cameras.main.shake(620, 0.013);
-      this.playSfx('sfx_boss_phase', 0.52);
-      this.playSfx('sfx_rune_burst', 0.34);
-      const f = { anim: 'fx-soulburst-crimson', tex: 'fx_soulburst_crimson' };
-      this.spawnFx(f.anim, f.tex, this.bossSprite.x, FLOOR - 24, 4.2, 9);
-      this.startBossFlames();
-      this.setMessage('裂隙重新撕开——巫妖的骨架在火里站了起来：「你以为这就结束了？我不会放过你。」');
       this.updateMoveCard('slash', '亡者归来');
+      this.playMusic('p5');
+      const ringFx = () => this.skillFx('fx-soulburst', 'fx_soulburst');
+
+      // 节拍 1（0.0s）倒下：重击感 —— 红闪、强震、原体崩落
+      this.cameras.main.flash(420, 130, 10, 6);
+      this.cameras.main.shake(460, 0.017);
+      this.playSfx('sfx_boss_death', 0.55);
+      this.spawnBurst(bx, FLOOR - 150, 0xff5a1e, 46);
+      this.spawnBurst(bx, FLOOR - 90, 0x2a1a2e, 30);
+      this.setMessage('裂隙巫妖的骨架散了架，重重砸在地上。');
+
+      // 节拍 2（0.7s）死寂：压暗画面，镜头推近残骸
+      this.time.delayedCall(700, () => {
+        this.cameras.main.zoomTo(1.14, 700);
+        this.dimScreen(0.62, 500);
+        this.setMessage('……峡谷安静了下来。');
+      });
+
+      // 节拍 3（1.9s）第一句台词
+      this.time.delayedCall(1900, () => {
+        this.setMessage('「你以为这样就结束了？」');
+        this.cameras.main.shake(180, 0.004);
+      });
+
+      // 节拍 4（2.7s）第二句台词 + 微弱火星
+      this.time.delayedCall(2700, () => {
+        this.setMessage('「有些东西，死了才会真正开始。」');
+        for (let i = 0; i < 5; i += 1) {
+          this.time.delayedCall(i * 90, () => {
+            const dot = this.add.circle(bx + (Math.random() - 0.5) * 90, FLOOR - 40 - Math.random() * 60, 2, 0xff6a2a, 0.9).setDepth(16);
+            this.tweens.add({ targets: dot, y: dot.y - 70, alpha: 0, duration: 800, onComplete: () => dot.destroy() });
+          });
+        }
+      });
+
+      // 节拍 5（3.4s）点火：白闪 + 三层赤红冲击环 + 火焰腾起，镜头拉回
+      this.time.delayedCall(3400, () => {
+        this.dimScreen(0, 260);
+        this.cameras.main.flash(340, 255, 220, 170);
+        this.cameras.main.shake(620, 0.02);
+        this.cameras.main.zoomTo(1.0, 520);
+        this.playSfx('sfx_boss_phase', 0.55);
+        this.playSfx('sfx_rune_burst', 0.4);
+        for (let i = 0; i < 3; i += 1) {
+          this.time.delayedCall(i * 170, () => {
+            const rf = ringFx();
+            this.spawnFx(rf.anim, rf.tex, bx, FLOOR - 40, 3.2 + i * 1.5, 9);
+          });
+        }
+        this.spawnBurst(bx, FLOOR - 170, 0xffb45c, 54);
+        this.startBossFlames();
+        this.setMessage('它从灰里站了起来——法袍烧尽，骨架外露，头骨裂开喷出火。');
+      });
+
+      // 节拍 6（4.2s）定场：交代玩法
+      this.time.delayedCall(4200, () => {
+        this.setMessage('亡者归来：它的生命正在自燃。撑到烈焰烧尽，或者抢先把它打散。');
+      });
+    }
+
+    // 燃尽终曲：血条烧空或被直接打死时走这里，3.6 秒熄灭演出后才结算。
+    beginBossBurnout() {
+      const b = this.boss;
+      if (this.status !== 'run' || b.mode === 'burnout') return;
+      const bx = this.bossSprite.x;
+      b.mode = 'burnout';
+      b.timer = 3.6;
+      b.hp = 0;
+      this.playerState.invuln = Math.max(this.playerState.invuln, 4.5);
+      this.playerState.hurtTimer = 0;
+      this.playMusic('burnout');
+      this.playSfx('sfx_boss_death', 0.6);
+      this.cameras.main.shake(820, 0.02);
+      this.cameras.main.flash(320, 255, 214, 150);
+      // 火焰暴涨
+      if (this.bossFlames) {
+        for (const f of this.bossFlames) { f.s.setScale(f.s.scaleX * 1.7, f.s.scaleY * 1.7); }
+      }
+      this.setMessage('烈焰终于烧穿了它自己。');
+      const ringFx = () => this.skillFx('fx-soulburst', 'fx_soulburst');
+      for (let i = 0; i < 4; i += 1) {
+        this.time.delayedCall(i * 150, () => {
+          const rf = ringFx();
+          this.spawnFx(rf.anim, rf.tex, bx, FLOOR - 46, 2.6 + i * 1.3, 9);
+        });
+      }
+      this.spawnBurst(bx, FLOOR - 170, 0xffd27a, 64);
+      this.spawnBurst(bx, FLOOR - 100, 0xff5a1e, 52);
+      this.spawnBurst(bx, FLOOR - 40, 0xff3a10, 40);
+      // 熄灭：火焰逐个散掉，镜头推近余烬
+      this.time.delayedCall(1500, () => {
+        this.stopBossFlames();
+        this.cameras.main.zoomTo(1.16, 800);
+        this.setMessage('骨架连同火焰一起塌成一堆余烬。');
+      });
+      this.time.delayedCall(2400, () => { this.spawnBurst(bx, FLOOR - 30, 0x8a7a6a, 26); });
+      this.time.delayedCall(3300, () => {
+        this.cameras.main.zoomTo(1.0, 420);
+        this.endRun(true);
+      });
+    }
+
+    // 全屏压暗层（过场用）。没有就建一个，之后复用。
+    dimScreen(alpha, ms) {
+      if (!this.dimOverlay) {
+        this.dimOverlay = this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0).setDepth(48);
+      }
+      this.tweens.add({ targets: this.dimOverlay, alpha, duration: Math.max(1, ms) });
     }
 
     enterRiftLord() {
@@ -1869,6 +2085,35 @@
       g.clear();
       if (this.room === 'boss' && this.boss.mode === 'tell') {
         const move = this.boss.move;
+        // P5 一切预警改成炽红，和幽紫阶段形成强烈对比
+        if (this.boss.phase === 5 && this.boss.revived) {
+          const hot = this.boss.slashTempo === 'fast' ? 0xffd27a : 0xff4d14;
+          const r5 = this.boss.moveRange || 150;
+          if (move === 'slash') {
+            g.fillStyle(hot, 0.16).fillCircle(this.bossSprite.x, FLOOR - 4, r5);
+            g.lineStyle(4, hot, 0.85).strokeCircle(this.bossSprite.x, FLOOR - 4, r5);
+            g.lineStyle(2, 0xfff0c8, 0.5).strokeCircle(this.bossSprite.x, FLOOR - 4, r5 * 0.7);
+          } else if (move === 'shot') {
+            const shotEnd = this.boss.facing > 0 ? WIDTH - 40 : 40;
+            const lanes = this.boss.phase >= 3 ? [72, 132, 192] : [72, 146];
+            for (const lane of lanes) {
+              g.lineStyle(4, 0xff4d14, 0.34).lineBetween(this.bossSprite.x, FLOOR - lane, shotEnd, FLOOR - lane);
+              g.lineStyle(1, 0xffd27a, 0.8).lineBetween(this.bossSprite.x, FLOOR - lane, shotEnd, FLOOR - lane);
+              g.fillStyle(0xffd27a, 0.8).fillCircle(this.bossSprite.x, FLOOR - lane, 8);
+            }
+          } else if (move === 'rush') {
+            g.fillStyle(0xff4d14, 0.22).fillCircle(this.boss.targetX, FLOOR - 4, this.bossMoves().rush.range);
+            g.lineStyle(4, 0xff8a3a, 0.9).strokeCircle(this.boss.targetX, FLOOR - 4, this.bossMoves().rush.range);
+            g.lineStyle(2, 0xfff0c8, 0.8).strokeCircle(this.boss.targetX, FLOOR - 4, 18);
+          } else if (move === 'wave') {
+            const radius = this.bossMoves().wave.range;
+            g.fillStyle(0xff4d14, 0.34).fillCircle(this.boss.sealX, FLOOR - 5, radius);
+            g.lineStyle(4, 0xffb45c, 0.95).strokeCircle(this.boss.sealX, FLOOR - 5, radius);
+            g.lineStyle(2, 0xfff0c8, 0.85).lineBetween(this.boss.sealX - 19, FLOOR - 5, this.boss.sealX + 19, FLOOR - 5);
+            g.lineBetween(this.boss.sealX, FLOOR - 24, this.boss.sealX, FLOOR + 14);
+          }
+          return;
+        }
         if (move === 'slash') {
           if (this.boss.encounter === 'rift') {
             const radius = this.boss.moveRange;
@@ -2152,6 +2397,27 @@
     }
 
     // 播一次就自我销毁的特效精灵：不需要任何外部状态跟踪，房间切换也不会残留。
+    // 音乐切换。原 BGM 是页面上的 <audio>，这里用音量让位而不是硬切，
+    // 避免出现"两首曲子同时响"或"音乐断掉"的廉价感。
+    playMusic(which) {
+      const q = (id) => { try { return document.querySelector(id); } catch (_) { return null; } };
+      const normal = q('#bgm'), theme = q('#bgmP5'), sting = q('#stingBurnout');
+      if (this.__bgmVol === undefined && normal) this.__bgmVol = normal.volume;
+      try {
+        if (which === 'p5') {
+          if (normal) normal.volume = (this.__bgmVol ?? 1) * 0.16;
+          if (theme) { theme.volume = 0.5; theme.currentTime = 0; theme.play().catch(() => {}); }
+        } else if (which === 'burnout') {
+          if (theme) theme.volume = 0.10;
+          if (sting) { sting.volume = 0.62; sting.currentTime = 0; sting.play().catch(() => {}); }
+        } else {
+          if (theme) { theme.pause(); theme.currentTime = 0; }
+          if (sting) { sting.pause(); sting.currentTime = 0; }
+          if (normal) normal.volume = this.__bgmVol ?? 1;
+        }
+      } catch (_) { /* 浏览器可能拦截自动播放，忽略 */ }
+    }
+
     // P5（亡者归来）时把术式换成赤红火焰版；其余阶段保持幽紫。
     // 形状/帧数/时序完全一致，所以判定范围与躲避手感不受换皮影响。
     // 显式传动画键与贴图键：两者命名规则不同（动画用连字符、贴图用下划线），
@@ -2161,18 +2427,55 @@
       return red ? { anim: `${anim}-crimson`, tex: `${tex}_crimson` } : { anim, tex };
     }
 
-    // 眼窝与骨架之间的燃烧火焰。用循环帧精灵跟随巫妖，bob 与本体同步。
+    // 焚身形态的火焰壳：14 处火焰包住全身，而不是点缀几个点。
+    // 每处用不同的播放速度与起始帧错开，避免整片火同步跳动（那样最假）。
     startBossFlames() {
       this.stopBossFlames();
-      const mk = (ox, oy, k) => this.add.sprite(this.bossSprite.x, FLOOR + oy, 'fx_flame', 0)
-        .setOrigin(0.5, 1).setDepth(15).setScale(k).play('fx-flame');
+      const mk = (ox, oy, k, spd) => {
+        const sp = this.add.sprite(this.bossSprite.x, FLOOR + oy, 'fx_flame', 0)
+          .setOrigin(0.5, 1).setDepth(15).setScale(k).play('fx-flame');
+        sp.anims.timeScale = spd;
+        sp.setFrame(Math.floor(Math.random() * 16));
+        return sp;
+      };
+      const S = 1.18;
       this.bossFlames = [
-        { s: mk(-16, -283, 0.26), ox: -16, oy: -283 },
-        { s: mk(17, -283, 0.26), ox: 17, oy: -283 },
-        { s: mk(0, -216, 0.46), ox: 0, oy: -216 },
-        { s: mk(-7, -203, 0.36), ox: -7, oy: -203 },
-        { s: mk(8, -191, 0.32), ox: 8, oy: -191 },
+        { s: mk(-19, -320, 0.30, 1.4), ox: -19, oy: -320 },   // 左眼
+        { s: mk(20, -320, 0.30, 1.1), ox: 20, oy: -320 },     // 右眼
+        { s: mk(0, -352, 0.62, 1.0), ox: 0, oy: -352 },       // 头骨裂口火柱
+        { s: mk(-52, -292, 0.42, 1.3), ox: -52, oy: -292 },   // 左肩
+        { s: mk(54, -292, 0.42, 0.9), ox: 54, oy: -292 },     // 右肩
+        { s: mk(-10, -256, 0.40, 1.2), ox: -10, oy: -256 },   // 胸腔上
+        { s: mk(9, -240, 0.34, 1.5), ox: 9, oy: -240 },       // 胸腔中
+        { s: mk(-8, -222, 0.30, 1.0), ox: -8, oy: -222 },     // 肋骨间
+        { s: mk(-104, -222, 0.34, 1.4), ox: -104, oy: -222 }, // 左臂
+        { s: mk(107, -222, 0.34, 1.1), ox: 107, oy: -222 },   // 右臂
+        { s: mk(-74, -34, 0.50, 1.2), ox: -74, oy: -34 },     // 地面火环
+        { s: mk(0, -30, 0.56, 1.5), ox: 0, oy: -30 },
+        { s: mk(76, -34, 0.50, 1.0), ox: 76, oy: -34 },
+        { s: mk(-118, -30, 0.40, 1.3), ox: -118, oy: -30 },
       ];
+    }
+
+    // 持续上升的余烬：P5 期间每隔一小段时间从本体冒出火星
+    updateBossEmbers(dt) {
+      if (!(this.boss.phase === 5 && this.boss.revived) || this.room !== 'boss') return;
+      this.emberTimer = (this.emberTimer || 0) - dt;
+      if (this.emberTimer > 0) return;
+      this.emberTimer = 0.045;
+      const x = this.bossSprite.x + (Math.random() - 0.5) * 150;
+      const y = FLOOR - 40 - Math.random() * 280;
+      const hot = Math.random() < 0.45;
+      const dot = this.add.circle(x, y, hot ? 2.6 : 1.7, hot ? 0xffd27a : 0xff5a1e, 0.95).setDepth(16);
+      this.tweens.add({
+        targets: dot,
+        y: y - 90 - Math.random() * 120,
+        x: x + (Math.random() - 0.5) * 70,
+        alpha: 0,
+        scale: 0.2,
+        duration: 700 + Math.random() * 700,
+        onComplete: () => dot.destroy(),
+      });
     }
 
     stopBossFlames() {

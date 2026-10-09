@@ -21,6 +21,7 @@ const types = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.ogg': 'audio/ogg',
+  '.wav': 'audio/wav',
   '.md': 'text/markdown; charset=utf-8',
   '.pdf': 'application/pdf',
   '.csv': 'text/csv; charset=utf-8',
@@ -51,6 +52,9 @@ const server = http.createServer((request, response) => {
       'Content-Type': types[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
       'Cache-Control': 'no-store',
       'X-Content-Type-Options': 'nosniff',
+      // 必须显式给出长度：否则走 chunked 传输，浏览器算不出媒体时长
+      // （duration 会一直是 Infinity，<audio loop> 的循环也会不可靠）。
+      'Content-Length': stat.size,
     });
     fs.createReadStream(filePath).pipe(response);
   });
