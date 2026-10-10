@@ -1156,7 +1156,10 @@
         this.player.body.setVelocityX(0);
       } else {
         const moveScale = blocking ? 0.48 : p.attack ? 0.34 : 1;
-        this.player.body.setVelocityX(move * (move ? 245 * moveScale : 0));
+        // 玩家移动速度 245 → 275：
+        // 上一轮把 Boss 在 P5 的追击提到 224，却没检查玩家余量（只剩 21px/s），
+        // 导致需要跑出地面圈时跑不出去。这里把余量还回来。
+        this.player.body.setVelocityX(move * (move ? 275 * moveScale : 0));
       }
 
       if (guardHeld && !blocking && p.stamina <= 0 && p.guardBreak <= 0) {
