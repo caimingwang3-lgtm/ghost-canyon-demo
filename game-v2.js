@@ -461,6 +461,23 @@
       const plannerPanel = document.querySelector('#plannerPanel');
       document.querySelector('#debugBtn').addEventListener('click', () => { plannerPanel.hidden = !plannerPanel.hidden; });
       document.querySelector('#plannerCancel').addEventListener('click', () => { plannerPanel.hidden = true; });
+      // ① 策划模式专用：左下角浮动「退出策劃模式」。
+      //    原来进了策划模式就没有出口，只能刷新页面。
+      if (!document.getElementById('debugExit')) {
+        const dbgExit = document.createElement('button');
+        dbgExit.id = 'debugExit';
+        dbgExit.type = 'button';
+        dbgExit.textContent = '⏻ 退出策劃模式';
+        dbgExit.style.cssText = [
+          'position:fixed', 'left:10px', 'bottom:calc(10px + env(safe-area-inset-bottom))',
+          'z-index:1200', 'display:none', 'border:1px solid #c9a86a',
+          'background:rgba(32,25,14,.92)', 'color:#ffd98f', 'border-radius:16px',
+          'padding:8px 14px', 'font:12px/1 "Noto Sans SC",system-ui,sans-serif',
+          'box-shadow:0 3px 12px rgba(0,0,0,.5)', 'cursor:pointer',
+        ].join(';');
+        dbgExit.addEventListener('click', () => this.exitDebug());
+        document.body.appendChild(dbgExit);
+      }
       document.querySelector('#plannerStart').addEventListener('click', () => {
         this.debugConfig = {
           stage: document.querySelector('#plannerStage').value,
@@ -3516,6 +3533,46 @@
     }
 
     // ⑥ 残血红色暗角：越接近死亡，屏幕边缘越红、越随心跳脉动
+    // 退出策劃模式，回到主菜单
+    exitDebug() {
+      this.debugMode = false;
+      this.testHpMode = false;
+      this.godMode = false;
+      if (this.debugConfig) this.debugConfig.godMode = false;
+      // 血量测试可能把上限改成了 10000，这里复位，避免影响下一局
+      const p = this.playerState;
+      p.maxHp = 100;
+      p.hp = 100;
+      p.energy = 0;
+      if (this.debugPanel) this.debugPanel.setVisible(false);
+      const _de = document.getElementById('debugExit');
+      if (_de) _de.style.display = 'none';
+      // 清场：把这一局留下的敌人 / 弹幕 / 手 / 陨石都收掉
+      this.clearEncounterObjects();
+      if (this.handSprites) {
+        Object.keys(this.handSprites).forEach((k) => {
+          if (this.handSprites[k]) this.handSprites[k].destroy();
+        });
+        this.handSprites = null;
+      }
+      this.meteorRain = null;
+      this.meteorCount = 0;
+      if (this.handGfx) this.handGfx.clear();
+      if (this.grabGfx) this.grabGfx.clear();
+      if (this.grabText) this.grabText.setVisible(false);
+      // 回到主菜单：把标题、正文、按钮文字一起复位
+      document.querySelector('#overlayTitle').textContent = '讀招、應對，再抓住反擊窗口';
+      document.querySelector('#overlayText').textContent = '通過熱身與高壓遭遇進入檢查點，先擊敗幽影守衛精英，再決定是否挑戰裂隙巫妖。用普攻、格擋、彈反與閃避應對敵人。';
+      document.querySelector('#startBtn').innerHTML = '完整試煉 <b>→</b>';
+      document.querySelector('#bossBtn').innerHTML = '直達 Boss <b>↗</b>';
+      document.querySelector('#resultSummary').hidden = true;
+      document.querySelector('#plannerPanel').hidden = true;
+      document.querySelector('#overlay').classList.remove('hidden');
+      document.querySelector('#statusDot').classList.remove('live');
+      this.status = 'menu';
+      this.setMessage('已退出策劃模式，回到主菜單。');
+    }
+
     // ② 10000 血承伤测试：关掉无敌，改成高血量，伤害正常结算
     toggleTestHp() {
       if (!this.debugMode) return;
@@ -3539,6 +3596,8 @@
 
     // 策划模式面板：按键表 + 故事标记 + 实时承伤统计
     drawDebugPanel() {
+      const _dbgExit = document.getElementById('debugExit');
+      if (_dbgExit) _dbgExit.style.display = this.debugMode && this.status === 'run' ? 'block' : 'none';
       if (!this.debugMode) { if (this.debugPanel) this.debugPanel.setVisible(false); return; }
       if (!this.debugPanel) {
         this.debugPanel = this.add.text(10, 92, '', {
