@@ -188,7 +188,7 @@
     // ② 招式压到 4 招：形状、颜色、预警各不相同，玩家才分得清
     2: [['slash', 'hand', 'tide', 'wave'], ['tide', 'hand', 'slash', 'rush']],
     3: [['hand', 'slash', 'gaze', 'souls'], ['rush', 'hand', 'tide', 'wave']],
-    4: [['rush', 'hand', 'souls', 'wave'], ['hand', 'gaze', 'rush', 'souls']],
+    4: [['rush', 'souls', 'tide', 'wave'], ['hand', 'gaze', 'souls', 'slash']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
     // ② P5 只留 4 招，全都是「一眼能认出来」的：
     //    冲撞（横冲）/ 抓取（手伸出）/ 震爆（圆环）/ 锤击（手高举）
@@ -1631,7 +1631,11 @@
         // ③ 裂隙巫妖原来在待机时完全不移动，玩家绕远就安全了，压迫感全无。
         // 现在距离拉开就朝玩家漂移（比精英慢，但仍会贴上来）。
         const chase = b.encounter === 'elite' ? 218 : 260;
-        const chaseSpeed = b.encounter === 'elite' ? 138 : 104;
+        // ③ 原来巫妖待机漂移只有 104（比精英 138 还慢），P5 最凶的形态反而最慢。
+        //    改成按阶段提速：P5 一/二阶段 190 / 224。
+        const chaseSpeed = b.encounter === 'elite' ? 138
+          : (b.phase === 5 && b.revived ? (b.p5Stage === 2 ? 224 : 190)
+            : b.phase >= 3 ? 132 : 104);
         if (b.mode === 'idle' && Math.abs(dx) > chase && b.hp > 0) {
           this.bossSprite.body && this.bossSprite.body.setVelocityX(facing * chaseSpeed * 1.05);
           this.bossSprite.x = clamp(this.bossSprite.x + facing * chaseSpeed * dt, 90, this.bossMaxX());
@@ -1916,8 +1920,9 @@
     // 所以可以比 phaseSpeed 更激进，用来制造「越来越喘不过气」的压力。
     phaseGap() {
       // 第二阶段再收紧一档，解决「后半段感觉不出招」的问题
-      if (this.boss.encounter === 'rift' && this.boss.phase === 5 && this.boss.p5Stage === 2) return 0.22;
-      const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60, 5: 0.30 };
+      // ④ P5 再压一档：它是「自燃倒计时」形态，本来就该缠着你不放
+      if (this.boss.encounter === 'rift' && this.boss.phase === 5 && this.boss.p5Stage === 2) return 0.15;
+      const table = { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.60, 5: 0.22 };
       return table[this.boss.phase] || 1.0;
     }
 
@@ -1954,6 +1959,18 @@
       b.hitResolved = false;
       b.handLocked = false;
       b.chainStreak = 0;          // 新招式开始 → 连段重新计数
+      // ⑤ P3+ 並行施法：出主招的同時另外射一輪冥火。
+      //    單一威脅永遠只有一個答案，並行才會逼玩家做取捨。
+      if (b.encounter === 'rift' && b.phase >= 3 && move !== 'shot' && Math.random() < 0.42) {
+        const lanes = [FLOOR - 96, FLOOR - 176];
+        const shotDef = this.bossMoves().shot;
+        this.time.delayedCall(430, () => {
+          if (this.status !== 'run' || this.boss.hp <= 0) return;
+          lanes.forEach((ly, i) => this.spawnProjectile(
+            this.bossSprite.x + this.boss.facing * 52, ly, this.boss.facing,
+            292 + i * 26, shotDef.damage, shotDef.label));
+        });
+      }
       b.tide = null;              // 新招式开始 → 清掉上一招残留的实体
       b.gaze = null;
       b.bloom = null;
@@ -2601,6 +2618,11 @@
       // 玩家会被一只不存在的手永久钉住
       this.releaseGrab(false);
       b.hand = null;
+      // ② Boss 都烧没了，追蹤球不能还在场上追（玩家反馈：死了还放球）
+      if (b.souls) {
+        b.souls.forEach((o) => { if (o.spr) o.spr.destroy(); if (o.halo) o.halo.destroy(); });
+        b.souls = null;
+      }
       if (this.handSprites) {
         for (const k of Object.keys(this.handSprites)) {
           if (this.handSprites[k]) this.handSprites[k].destroy();
@@ -3581,7 +3603,9 @@
           o.hit = true;
           this.playerDamage('魂噬', 14);
         }
-        if (o.life <= 0 || o.y > FLOOR + 40 || o.x < -60 || o.x > WORLD_W + 60) {
+        // ① 撞墙就要消失。原来写的是 x < -60 / x > WORLD_W+60，
+        //    但场地墙在 44 / WORLD_W-44——球撞墙后还能飞 100px，会堆在墙边不动。
+        if (o.life <= 0 || o.y > FLOOR + 40 || o.x < 46 || o.x > WORLD_W - 46) {
           if (o.spr) o.spr.destroy();
           if (o.halo) o.halo.destroy();
           arr.splice(i, 1);
