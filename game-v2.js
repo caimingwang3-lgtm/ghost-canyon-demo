@@ -281,6 +281,9 @@
       // 隕石雨：离线渲染的白热核心 + 燃烧拖尾 + 落地火环
       this.load.spritesheet('fx_meteor', 'assets/fx/fx_meteor.png', { frameWidth: 96, frameHeight: 200 });
       this.load.spritesheet('fx_meteor_impact', 'assets/fx/fx_meteor_impact.png', { frameWidth: 160, frameHeight: 160 });
+      // 火柱 / 火焰爆开：来自 OpenGameArt「Fire and Spell Animations」(CC0)，4x4=16 帧
+      this.load.spritesheet('fx_firepillar', 'assets/fx/fx_firepillar.png', { frameWidth: 128, frameHeight: 128 });
+      this.load.spritesheet('fx_fireburst', 'assets/fx/fx_fireburst.png', { frameWidth: 128, frameHeight: 128 });
       // 骸骨巨手：离线渲染的成品图，比代码盲画几何图形可控得多。
       // 4 帧开合——只做张开/攥紧两张的话，贴图会在 curl=0.5 处硬切。
       for (let hi = 0; hi < 4; hi += 1) this.load.image(`hand_c${hi}`, `assets/fx/hand_c${hi}.png`);
@@ -447,6 +450,8 @@
         ['fx-flame', 'fx_flame', 0, 15, 18, -1],
         ['fx-meteor', 'fx_meteor', 0, 11, 22, -1],
         ['fx-meteor-impact', 'fx_meteor_impact', 0, 9, 22, 0],
+        ['fx-firepillar', 'fx_firepillar', 0, 15, 26, 0],
+        ['fx-fireburst', 'fx_fireburst', 0, 15, 30, 0],
       ];
       for (const [key, texture, start, end, frameRate, repeat] of defs) {
         this.anims.create({ key, frames: this.anims.generateFrameNumbers(texture, { start, end }), frameRate, repeat });
@@ -3701,13 +3706,18 @@
         bl.fired += 1;
         this.spawnBurst(bx, FLOOR - 30, 0xffd27a, 18);
         this.spawnBurst(bx, FLOOR - 76, 0xff5a1e, 12);
-        // ③ 柱子加高加粗，并叠一层亮芯；判定宽度与视觉对齐（±42）
-        const col = this.add.rectangle(bx, FLOOR - 150, 58, 300, 0xff5a1e, 0.42).setDepth(24);
-        const core = this.add.rectangle(bx, FLOOR - 120, 26, 240, 0xffd88a, 0.75).setDepth(25);
-        this.tweens.add({ targets: col, alpha: 0, scaleX: 0.35, duration: 420,
-          onComplete: () => col.destroy() });
-        this.tweens.add({ targets: core, alpha: 0, scaleX: 0.2, duration: 320,
-          onComplete: () => core.destroy() });
+        // ③ 真正的火舌序列帧（CC0 素材），替掉原来的纯色矩形。
+        //    柱体从地面窜起，底端对齐地面；再叠一层火焰爆开做冲击。
+        const pillar = this.add.sprite(bx, FLOOR + 8, 'fx_firepillar', 0)
+          .setOrigin(0.5, 1).setDepth(24).setScale(1.15);
+        pillar.play('fx-firepillar');
+        const burst = this.add.sprite(bx, FLOOR - 30, 'fx_fireburst', 0)
+          .setDepth(25).setScale(0.95);
+        burst.play('fx-fireburst');
+        this.tweens.add({ targets: pillar, alpha: 0, duration: 480, delay: 300,
+          onComplete: () => pillar.destroy() });
+        this.tweens.add({ targets: burst, alpha: 0, duration: 360, delay: 150,
+          onComplete: () => burst.destroy() });
         this.cameras.main.shake(140, 0.006);
         if (Math.abs(this.player.x - bx) < 42 && this.playerState.invuln <= 0
             && this.playerState.hurtTimer <= 0) {
