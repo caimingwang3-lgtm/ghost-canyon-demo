@@ -1304,15 +1304,22 @@
         return;
       }
       const dx = target.x - this.player.x;
-      // When the sprites overlap, their center points may cross and flip the facing test.
-      // Give close Boss contact a small forgiveness radius so point-blank attacks still connect.
-      const bossOverlap = target.boss && Math.abs(dx) <= 72;
-      const inFront = bossOverlap || Math.sign(dx || 1) === attack.facing;
+      // ① 贴身宽恕对所有目标生效，不再只给 Boss。
+      //    站在宽敌人「边缘」时，它的中心点可能已经落到你身后，
+      //    原来的朝向判定会算成背身 → 明明贴着打却挥空。
+      const closeOverlap = Math.abs(dx) <= 72;
+      const inFront = closeOverlap || Math.sign(dx || 1) === attack.facing;
       // ① 跳跃时玩家 y 会抬起约 150px，原来固定的 <104 会让所有空中挥砍落空。
       // 改成按「对地高度差」判定：空中挥砍能打到地面目标，地面挥砍仍是严格同层。
       const airBonus = this.isPlayerAirborne() ? 200 : 0;
       const sameLane = Math.abs(target.y - this.player.y) < 104 + airBonus;
-      if (!inFront || Math.abs(dx) > attack.reach || !sameLane) {
+      // ② 判定不能只算中心到中心：敌人越宽，剑尖碰到它「边缘」时中心距越大。
+      //    把目标半宽算进来，做到「视觉碰到 = 判定成立」；上限 52px 防止变成隔空打击。
+      const targetHalfW = target.boss
+        ? (this.bossSprite.displayWidth || 0) * 0.5
+        : (target.sprite && target.sprite.displayWidth ? target.sprite.displayWidth * 0.5 : 0);
+      const edgeReach = attack.reach + Math.min(52, targetHalfW);
+      if (!inFront || Math.abs(dx) > edgeReach || !sameLane) {
         this.stats.whiffs += 1;
         this.setMessage('揮空：攻擊只判定前方有效距離，不會隔空或背身命中。');
         this.spawnSlashTrail(attack.index);
