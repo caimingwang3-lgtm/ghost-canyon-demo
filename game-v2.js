@@ -1971,10 +1971,10 @@
             292 + i * 26, shotDef.damage, shotDef.label));
         });
       }
-      b.tide = null;              // 新招式开始 → 清掉上一招残留的实体
-      b.gaze = null;
-      b.bloom = null;
-      b.souls = null;
+      // ② 这里**不能**清 tide/gaze/bloom/souls——
+      //    它们是自清理的（各自的 update 完会自己置 null），
+      //    而「压哨衔接」会让 startBossMove 在上一招还没播完时就被调用，
+      //    硬清会把獄火華放到一半的火柱打断（玩家反馈：站柱子上不掉血）。
       b.shockDone = false;
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
@@ -3565,7 +3565,7 @@
         b.souls.push({
           x: this.bossSprite.x, y: FLOOR - 150,
           vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
-          life: 4.2, hit: false, spr, halo,
+          life: 3.6, hit: false, spr, halo,
         });
       }
       this.playSfx('sfx_rune_burst', 0.5);
@@ -3602,6 +3602,13 @@
             && this.playerState.invuln <= 0) {
           o.hit = true;
           this.playerDamage('魂噬', 14);
+          // ① 命中即爆开消失。原来只标记 hit，球还会飄 4 秒才消失，
+          //    玩家看到的是「打中了却还在场上飘」= 残留。
+          this.spawnBurst(o.x, o.y, 0xd8b4ff, 16);
+          if (o.spr) o.spr.destroy();
+          if (o.halo) o.halo.destroy();
+          arr.splice(i, 1);
+          continue;
         }
         // ① 撞墙就要消失。原来写的是 x < -60 / x > WORLD_W+60，
         //    但场地墙在 44 / WORLD_W-44——球撞墙后还能飞 100px，会堆在墙边不动。
@@ -3646,8 +3653,9 @@
       const b = this.boss;
       const spots = [];
       const base = this.player.x;
-      for (let i = 0; i < 5; i += 1) {
-        let x = base + (i - 2) * 128 + (Math.random() - 0.5) * 56;
+      // ③ 5 → 7 根，間隔更寬，覆蓋面更大（玩家反馈：太简单）
+      for (let i = 0; i < 7; i += 1) {
+        let x = base + (i - 3) * 118 + (Math.random() - 0.5) * 46;
         x = Math.max(64, Math.min(this.arenaMaxX() - 24, x));
         spots.push(x);
       }
@@ -3660,16 +3668,22 @@
       const bl = this.boss.bloom;
       if (!bl) return;
       bl.t += dt;
-      while (bl.fired < bl.spots.length && bl.t >= 0.26 + bl.fired * 0.24) {
+      while (bl.fired < bl.spots.length && bl.t >= 0.20 + bl.fired * 0.19) {
         const bx = bl.spots[bl.fired];
         bl.fired += 1;
         this.spawnBurst(bx, FLOOR - 30, 0xffd27a, 18);
         this.spawnBurst(bx, FLOOR - 76, 0xff5a1e, 12);
-        const col = this.add.rectangle(bx, FLOOR - 130, 46, 260, 0xff6a2a, 0.5).setDepth(24);
-        this.tweens.add({ targets: col, alpha: 0, scaleX: 0.35, duration: 380,
+        // ③ 柱子加高加粗，并叠一层亮芯；判定宽度与视觉对齐（±42）
+        const col = this.add.rectangle(bx, FLOOR - 150, 58, 300, 0xff5a1e, 0.42).setDepth(24);
+        const core = this.add.rectangle(bx, FLOOR - 120, 26, 240, 0xffd88a, 0.75).setDepth(25);
+        this.tweens.add({ targets: col, alpha: 0, scaleX: 0.35, duration: 420,
           onComplete: () => col.destroy() });
-        if (Math.abs(this.player.x - bx) < 46 && this.playerState.invuln <= 0) {
-          this.playerDamage('獄火華', 15);
+        this.tweens.add({ targets: core, alpha: 0, scaleX: 0.2, duration: 320,
+          onComplete: () => core.destroy() });
+        this.cameras.main.shake(140, 0.006);
+        if (Math.abs(this.player.x - bx) < 42 && this.playerState.invuln <= 0
+            && this.playerState.hurtTimer <= 0) {
+          this.playerDamage('獄火華', 16);
         }
       }
       if (bl.fired >= bl.spots.length && bl.t > 2.4) this.boss.bloom = null;
@@ -4348,8 +4362,8 @@
             // 獄火華：地面浮現五個落點，依序噴發
             const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().bloom.tell * this.phaseSpeed())));
             const base = this.player.x;
-            for (let i = 0; i < 5; i += 1) {
-              const bx = Math.max(64, Math.min(this.arenaMaxX() - 24, base + (i - 2) * 128));
+            for (let i = 0; i < 7; i += 1) {
+              const bx = Math.max(64, Math.min(this.arenaMaxX() - 24, base + (i - 3) * 118));
               g.fillStyle(0xff4d14, 0.10 + k * 0.16).fillCircle(bx, FLOOR - 5, 46);
               g.lineStyle(4, 0xff8a3a, 0.85).strokeCircle(bx, FLOOR - 5, 46);
             }
