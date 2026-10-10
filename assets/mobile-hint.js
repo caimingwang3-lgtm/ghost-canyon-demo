@@ -108,6 +108,23 @@
     '  .demo-v2 .overlay-actions button{min-height:46px;}',
     '  .demo-v2 .planner-actions button{min-height:44px;}',
     '}',
+    /* ── D. 策划模式的触摸按钮条 ─────────────────────────────────────
+       策划面板列的全是键盘快捷键（1-4 阶段 / Q 能量 / H 回血 / B 血量测试），
+       手机上没键盘 = 那一栏写着也用不了。这里做成按钮，功能一一对应。 */
+    '#mh-dev{position:fixed;z-index:1400;display:none;left:8px;right:8px;',
+    '  bottom:calc(142px + env(safe-area-inset-bottom));gap:6px;align-items:center;',
+    '  flex-wrap:wrap;padding:7px 9px;border-radius:11px;',
+    '  background:rgba(14,18,24,.94);border:1px solid #4a5a52;',
+    '  box-shadow:0 4px 16px rgba(0,0,0,.55);}',
+    '#mh-dev b{font:10px "Noto Sans SC",system-ui,sans-serif;color:#9fe8c0;',
+    '  letter-spacing:.08em;margin-right:2px;}',
+    '#mh-dev button{-webkit-appearance:none;appearance:none;min-width:46px;min-height:38px;',
+    '  padding:0 8px;border-radius:9px;border:1px solid #55636d;background:#232c36;',
+    '  color:#dfe6ea;font:12px "Noto Sans SC",system-ui,sans-serif;}',
+    '#mh-dev button:active{filter:brightness(1.3)}',
+    '#mh-dev button.mh-phase{border-color:#c9a86a;color:#ffd98f;background:#332a16;}',
+    '#mh-dev button.mh-hp{border-color:#8fbf8a;color:#bdf0b6;}',
+    '#mh-dev.mh-on{display:flex}',
   ].join('\n');
 
   var style = document.createElement('style');
@@ -223,6 +240,43 @@
     var s = window.ghostCanyonScene;
     var on = !!(s && s.status === 'run');
     pauseBtn.style.display = on ? 'flex' : 'none';
+  }, 400);
+
+  // ── D. 策划模式的触摸按钮条 ───────────────────────────────────────
+  // 策划面板上写的是键盘快捷键，手机没有键盘，所以做成按钮。
+  // 每个按钮直接调用游戏里的对应方法，和按键走同一条路径。
+  var devBar = document.createElement('div');
+  devBar.id = 'mh-dev';
+  devBar.innerHTML = '<b>策劃</b>'
+    + '<button type="button" class="mh-phase" data-k="1">P1</button>'
+    + '<button type="button" class="mh-phase" data-k="2">P2</button>'
+    + '<button type="button" class="mh-phase" data-k="3">P3</button>'
+    + '<button type="button" class="mh-phase" data-k="4">P4</button>'
+    + '<button type="button" class="mh-hp" data-k="q">能量</button>'
+    + '<button type="button" class="mh-hp" data-k="h">回滿血</button>'
+    + '<button type="button" data-k="b">血量測試</button>';
+  document.body.appendChild(devBar);
+
+  devBar.addEventListener('click', function (e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    var s = window.ghostCanyonScene;
+    if (!s || !s.debugMode) return;
+    var k = btn.dataset.k;
+    try {
+      if (k >= '1' && k <= '4') s.debugSetPhase(Number(k));
+      else if (k === 'q') s.playerState.energy = Math.max(s.playerState.energy, 70);
+      else if (k === 'h') s.playerState.hp = s.playerState.maxHp || 100;
+      else if (k === 'b') s.toggleTestHp();
+    } catch (err) { /* 忽略：策划按钮不该把游戏搞崩 */ }
+    btn.style.filter = 'brightness(1.6)';
+    setTimeout(function () { btn.style.filter = ''; }, 160);
+  });
+
+  // 只在「策划模式 + 战斗中」显示
+  setInterval(function () {
+    var s = window.ghostCanyonScene;
+    devBar.classList.toggle('mh-on', !!(s && s.debugMode && s.status === 'run'));
   }, 400);
 
   window.__mobileHintReady = true;
