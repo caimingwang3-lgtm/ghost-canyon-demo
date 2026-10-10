@@ -204,7 +204,9 @@
     slash: { ...BOSS_MOVES.slash, label: '靈魂震爆', tell: 1.45, active: 0.22, recover: 1.3, damage: 22, range: 205 },
     shot: { ...BOSS_MOVES.shot, label: '追魂冥火', tell: 1.08, recover: 1.1, damage: 12 },
     rush: { ...BOSS_MOVES.rush, label: '幽魂換位', tell: 1.22, active: 0.56, recover: 1.3, damage: 28, range: 96 },
-    wave: { ...BOSS_MOVES.wave, label: '亡魂印爆', tell: 1.35, active: 0.34, recover: 1.25, damage: 24, range: 92 },
+    // ① 引信 1.35 → 0.90、半径 92 → 118：
+    //    原来跑出圈只要 0.33 秒，却给 1.35 秒，余量 4 倍 = 没有压迫感。
+    wave: { ...BOSS_MOVES.wave, label: '亡魂印爆', tell: 0.90, active: 0.34, recover: 1.25, damage: 24, range: 118 },
     // ② 焚天：全屏只有一处安全口
     burn: { ...BOSS_MOVES.wave, label: '焚天', tell: 1.9, active: 0.4, recover: 1.5, damage: 34, range: 96, guardable: false, parryable: false },
     // D 删掉「裂隙牵引」：被强制拽着走体验差，而且和巨手抓取功能重叠
