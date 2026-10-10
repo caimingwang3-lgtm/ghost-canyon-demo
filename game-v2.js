@@ -3532,9 +3532,37 @@
       const b = this.boss;
       b.gaze = { x: this.player.x, t: 0, fired: true, hitDone: false };
       this.playSfx('sfx_rune_burst', 0.42);
-      this.cameras.main.shake(200, 0.006);
-      this.spawnBurst(b.gaze.x, FLOOR - 120, 0xd8b4ff, 22);
-      this.setMessage('亡魂凝視命中：鎖定的位置會射出一道貫穿豎線，橫向離開即可。');
+      this.cameras.main.shake(220, 0.008);
+      // 光束：從巫妖頭部射向鎖定的地面位置。
+      // 之前這裡只有粒子，沒有畫光束，玩家看到的是「亮一下、掉血」——
+      // 每一下傷害都必須有看得見的來源。
+      const ox = this.bossSprite.x;
+      const oy = FLOOR - 188;
+      const tx = b.gaze.x;
+      const ty = FLOOR - 34;
+      const len = Math.hypot(tx - ox, ty - oy);
+      const ang = Math.atan2(ty - oy, tx - ox);
+      const cx = ox + Math.cos(ang) * len * 0.5;
+      const cy = oy + Math.sin(ang) * len * 0.5;
+      // 三層：外暈 / 主體 / 亮芯。逐層更亮更細，讀起來像「一擊貫穿」。
+      [[52, 0x5b2fa0, 0.26, 520], [26, 0xb98cff, 0.72, 430], [9, 0xf4e9ff, 1.0, 330]]
+        .forEach(([w, color, alpha, dur], i) => {
+          const beam = this.add.rectangle(cx, cy, len, w, color, alpha)
+            .setRotation(ang).setDepth(26 + i);
+          this.tweens.add({
+            targets: beam, alpha: 0, scaleY: 0.12, duration: dur, ease: 'Quad.easeOut',
+            onComplete: () => beam.destroy(),
+          });
+        });
+      // 命中點：地面炸開 + 焦痕殘留
+      const scorch = this.add.ellipse(tx, FLOOR - 6, 92, 20, 0xd8b4ff, 0.55).setDepth(25);
+      this.tweens.add({ targets: scorch, alpha: 0, scaleX: 1.6, duration: 760,
+        onComplete: () => scorch.destroy() });
+      this.spawnBurst(tx, FLOOR - 26, 0xf4e9ff, 30);
+      this.spawnBurst(tx, FLOOR - 96, 0xd8b4ff, 20);
+      this.spawnBurst(ox, oy, 0xb98cff, 16);
+      this.cameras.main.flash(110, 190, 150, 255);
+      this.setMessage('亡魂凝視：貫穿豎線已射出，橫向離開那條線即可。');
     }
 
     updateGaze(dt) {
