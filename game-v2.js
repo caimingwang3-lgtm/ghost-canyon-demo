@@ -1094,7 +1094,12 @@
       if (justDown(this.keys.pause)) this.togglePause();
       if (justDown(this.keys.jump) || justDown(this.keys.up) || justDown(this.keys.upArrow)) this.jump();
       if (justDown(this.keys.attack)) this.tryAttack();
-      if (justDown(this.keys.parry)) this.parry();
+      // ① 弹反必须是「重新按下」：按住不放只算一次。
+      //    原来用 JustDown，实测按住会反复触发，parryWindow 被无限刷新，
+      //    等于窗口一直开着 —— 弹反变成必然成功。
+      const _parryNow = this.keys.parry.isDown;
+      if (_parryNow && !this._parryWasDown) this.parry();
+      this._parryWasDown = _parryNow;
       if (justDown(this.keys.dodge) || justDown(this.keys.dodgeAlt)) this.dodge();
       if (justDown(this.keys.ultimate) || justDown(this.keys.ultimateAlt)) this.ultimate();
       if (justDown(this.keys.pray)) this.pray();
@@ -2204,15 +2209,16 @@
     parry() {
       const p = this.playerState;
       if (this.status !== 'run' || p.parryCooldown > 0 || p.guardBreak > 0 || p.hurtTimer > 0 || p.dodgeTimer > 0 || p.ultimateTimer > 0 || p.attack) return;
-      // ③ 窗口 0.4→0.55、失手冷却 0.38→0.24：鼓励尝试，
-      // 而不是按空一次就要干等。
-      p.parryWindow = 0.55;
+      // ② 窗口 0.55 → 0.40：按住混不过去了，但也不能过短——
+      //    弹反是「看到金色提示环再按」，窗口要容得下人的反应时间。
+      //    失手冷却保持 0.24，按空了不至于干等太久。
+      p.parryWindow = 0.40;
       p.parryCooldown = 0.24;
       p.parryPending = true;
       p.parryAnim = 0.26;
       this.stats.parryAttempts += 1;
       this.player.play('hero-attack', true);
-      this.setMessage('彈反窗口 0.55 秒：可彈反的招式會在你身上顯示金色提示環。');
+      this.setMessage('彈反窗口 0.40 秒：看到金色提示環再按 E，按住不放無效。');
     }
 
     dodge() {
