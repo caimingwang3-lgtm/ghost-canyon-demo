@@ -186,9 +186,9 @@
   const RIFT_PATTERNS = {
     1: [['slash', 'shot', 'gaze', 'slash'], ['gaze', 'shot', 'slash', 'shot']],
     // ② 招式压到 4 招：形状、颜色、预警各不相同，玩家才分得清
-    2: [['slash', 'hand', 'tide', 'rush'], ['tide', 'hand', 'slash', 'rush']],
-    3: [['hand', 'slash', 'gaze', 'rush'], ['rush', 'hand', 'tide', 'slash']],
-    4: [['rush', 'hand', 'tide', 'slash'], ['hand', 'gaze', 'rush', 'slash']],
+    2: [['slash', 'hand', 'tide', 'wave'], ['tide', 'hand', 'slash', 'rush']],
+    3: [['hand', 'slash', 'gaze', 'wave'], ['rush', 'hand', 'tide', 'slash']],
+    4: [['rush', 'hand', 'tide', 'wave'], ['hand', 'gaze', 'rush', 'slash']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
     // ② P5 只留 4 招，全都是「一眼能认出来」的：
     //    冲撞（横冲）/ 抓取（手伸出）/ 震爆（圆环）/ 锤击（手高举）
