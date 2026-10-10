@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#10161f">
   <title>幽影峡谷 · 裂隙巫妖 | 战斗与关卡策划 Demo</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="game-v2.css?v=202610102239">
+  <link rel="stylesheet" href="game-v2.css?v=202610102243">
 </head>
 <body class="demo-v2">
   <div id="boot-error" role="alert" hidden></div>
@@ -227,11 +227,48 @@
   <!-- P5 主题与燃尽终曲（本项目程序合成） -->
   <audio id="bgmP5" src="assets/audio/music_p5.wav" loop preload="none"></audio>
   <audio id="stingBurnout" src="assets/audio/music_burnout.wav" preload="none"></audio>
+  <!--
+    资源就绪前的点击要排队 —— 必须放在 phaser.min.js **之前**。
+    原因：game-v2.js 里 window.startGhostCanyon 是在 create() 末尾才赋值的，
+    而 create() 要等素材下载完。如果占位函数放在 Phaser 后面，它自己也要等
+    1.4MB 的引擎下完才执行，那段时间点击照样没反应。
+    这里先放一个占位函数把请求记下来，游戏准备好后自动执行。
+  -->
+  <script>
+    (function () {
+      var pending = null;
+      var real = null;
+      window.startGhostCanyon = function (mode) {
+        if (real) return real(mode);
+        pending = mode || 'full';
+        var f = document.getElementById('feedback');
+        if (f) f.textContent = '資源載入中……下載完成後會自動開始，不用重新整理。';
+      };
+      window.toggleGhostPause = function () {
+        if (real && window.ghostCanyonScene) window.ghostCanyonScene.togglePause();
+      };
+      window.__bindRealStart = function (fn) {
+        real = fn;
+        if (pending) { var m = pending; pending = null; fn(m); }
+      };
+      // 关键：按钮的处理函数是游戏在 create() 里挂的，资源没就绪时按钮等于没接线，
+      // 点击根本进不到上面那个占位函数。所以这里在**捕获阶段**先接住，
+      // 就绪前拦下这次点击并排队；就绪后不拦，交给游戏自己的处理函数。
+      document.addEventListener('click', function (e) {
+        if (real) return;
+        var t = e.target && e.target.closest ? e.target.closest('#startBtn,#bossBtn') : null;
+        if (!t) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.startGhostCanyon(t.id === 'bossBtn' ? 'boss' : 'full');
+      }, true);
+    })();
+  </script>
   <script src="assets/phaser.min.js"></script>
-  <script src="feedback-v2.js?v=202610102239"></script>
-  <script src="game-v2.js?v=202610102239"></script>
+  <script src="feedback-v2.js?v=202610102243"></script>
+  <script src="game-v2.js?v=202610102243"></script>
   <!-- 手机竖屏提示横幅：只在触屏+竖屏时出现，桌面端不影响 -->
-  <script src="assets/mobile-hint.js?v=202610102239"></script>
+  <script src="assets/mobile-hint.js?v=202610102243"></script>
   <script>if (location.protocol === 'file:') document.getElementById('local-open-help').hidden = false;</script>
 </body>
 </html>

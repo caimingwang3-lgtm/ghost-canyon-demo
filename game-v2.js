@@ -403,7 +403,11 @@
       this.updateUi();
       this.attachUi();
       window.ghostCanyonScene = this;
-      window.startGhostCanyon = (mode) => this.begin(mode === 'boss' ? 'boss' : 'full');
+      // 页面在资源就绪前可能已经放了一个排队用的占位函数（index-v2.html）。
+      // 有的话通过它交接，让那一次点击立刻兑现，而不是让玩家以为卡住要刷新。
+      const _realStart = (mode) => this.begin(mode === 'boss' ? 'boss' : 'full');
+      if (typeof window.__bindRealStart === 'function') window.__bindRealStart(_realStart);
+      else window.startGhostCanyon = _realStart;
       window.toggleGhostPause = () => this.togglePause();
       this.setMessage('先熟悉移动，再通过抬剑预警练习格挡或弹反。');
     }
