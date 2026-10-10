@@ -105,10 +105,8 @@
     '  .demo-v2 .overlay{overflow-y:auto !important;-webkit-overflow-scrolling:touch !important;',
     '    align-items:flex-start !important;padding:18px 10px 150px !important;}',
     '  .demo-v2 .overlay-card{max-width:100% !important;margin:0 auto !important;}',
-    '  .demo-v2 .planner-panel{grid-template-columns:1fr !important;}',
-    '  .demo-v2 .planner-actions{grid-column:auto !important;display:flex;gap:8px;}',
-    '  .demo-v2 .planner-actions button{flex:1 1 0;min-height:44px;}',
     '  .demo-v2 .overlay-actions button{min-height:46px;}',
+    '  .demo-v2 .planner-actions button{min-height:44px;}',
     '}',
   ].join('\n');
 
