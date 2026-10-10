@@ -68,6 +68,36 @@
     'right:10px;border:1px solid #5b6672;background:rgba(20,26,33,.85);color:#cdd6df;',
     'border-radius:14px;padding:6px 12px;font:12px "Noto Sans SC",system-ui,sans-serif}',
     'html.mh-ls #mh-exit{display:block}',
+    /* ── A. 触屏按键重排 ─────────────────────────────────────────────
+       原来 8 个键挤在一行，每个只有 40px 出头，手机上根本按不准。
+       现在：左边只放移动（两个大圆键），右边 3×2 网格放战斗键。
+       390px 宽屏算下来 142 + 10 + 186 = 338px，放得下。          */
+    '@media (pointer: coarse) {',
+    '  .demo-v2 .touch-controls{display:flex !important;align-items:center;',
+    '    justify-content:space-between;gap:10px;padding:9px 12px !important;}',
+    '  .demo-v2 .touch-controls .move-pad{display:flex;gap:10px;flex:0 0 auto;}',
+    '  .demo-v2 .touch-controls .move-pad button{width:66px !important;height:66px !important;',
+    '    min-width:66px !important;min-height:66px !important;border-radius:50% !important;',
+    '    font-size:22px !important;padding:0 !important;}',
+    '  .demo-v2 .touch-controls .action-pad{display:grid !important;',
+    '    grid-template-columns:repeat(3,58px);gap:6px;flex:0 0 auto;}',
+    '  .demo-v2 .touch-controls .action-pad button{width:58px !important;',
+    '    height:52px !important;min-width:58px !important;min-height:52px !important;',
+    '    border-radius:11px !important;font-size:13px !important;padding:0 !important;}',
+    /* 「斩」是最常用的键，配色上单独区分，避免和「格挡」按混 */
+    '  .demo-v2 .touch-controls .action-pad button.attack-key{background:#7d3126 !important;',
+    '    border-color:#e89a78 !important;color:#ffe4d6 !important;font-size:15px !important;}',
+    '  .demo-v2 .touch-controls .action-pad button.ultimate-key{background:#4a3c17 !important;',
+    '    border-color:#d9b45f !important;color:#ffeab0 !important;}',
+    '}',
+    /* ── B. 游戏中常驻的暂停/菜单按钮 ───────────────────────────────
+       手机没有 ESC 键，原来进了游戏就只能打到死才能回菜单。       */
+    '#mh-pause{position:fixed;z-index:1500;display:none;align-items:center;',
+    '  justify-content:center;top:calc(8px + env(safe-area-inset-top));right:10px;',
+    '  width:42px;height:42px;border-radius:50%;border:1px solid #7a6a4a;',
+    '  background:rgba(26,31,40,.88);color:#e6dcc4;font-size:17px;padding:0;',
+    '  box-shadow:0 3px 12px rgba(0,0,0,.5);}',
+    '#mh-pause:active{background:#3a4552}',
   ].join('\n');
 
   var style = document.createElement('style');
@@ -163,6 +193,27 @@
   window.addEventListener('orientationchange', function () { setTimeout(apply, 250); });
   apply();
   setTimeout(apply, 300);
+
+  // ── B. 游戏中常驻的暂停/菜单按钮 ─────────────────────────────────
+  // 手机没有 ESC，原来开局后只能打到死才能回菜单。
+  var pauseBtn = document.createElement('button');
+  pauseBtn.id = 'mh-pause';
+  pauseBtn.type = 'button';
+  pauseBtn.textContent = '⏸';
+  pauseBtn.setAttribute('aria-label', '暂停与菜单');
+  pauseBtn.addEventListener('click', function () {
+    var s = window.ghostCanyonScene;
+    if (!s) return;
+    if (s.status === 'run' && typeof s.togglePause === 'function') s.togglePause();
+  });
+  document.body.appendChild(pauseBtn);
+
+  // 只在「游戏进行中」显示——开始页/结算页已经有自己的按钮了，不要重复
+  setInterval(function () {
+    var s = window.ghostCanyonScene;
+    var on = !!(s && s.status === 'run');
+    pauseBtn.style.display = on ? 'flex' : 'none';
+  }, 400);
 
   window.__mobileHintReady = true;
 })();
