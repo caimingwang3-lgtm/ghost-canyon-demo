@@ -98,6 +98,18 @@
     '  background:rgba(26,31,40,.88);color:#e6dcc4;font-size:17px;padding:0;',
     '  box-shadow:0 3px 12px rgba(0,0,0,.5);}',
     '#mh-pause:active{background:#3a4552}',
+    /* ── C. 手机端：覆盖层必须能滚 ───────────────────────────────────
+       策划模式的面板在手机上超出屏幕却滑不动，够不到「开始测试」。
+       底部留出触屏按键的高度，免得按钮被压在按键栏下面。           */
+    '@media (pointer: coarse) {',
+    '  .demo-v2 .overlay{overflow-y:auto !important;-webkit-overflow-scrolling:touch !important;',
+    '    align-items:flex-start !important;padding:18px 10px 150px !important;}',
+    '  .demo-v2 .overlay-card{max-width:100% !important;margin:0 auto !important;}',
+    '  .demo-v2 .planner-panel{grid-template-columns:1fr !important;}',
+    '  .demo-v2 .planner-actions{grid-column:auto !important;display:flex;gap:8px;}',
+    '  .demo-v2 .planner-actions button{flex:1 1 0;min-height:44px;}',
+    '  .demo-v2 .overlay-actions button{min-height:46px;}',
+    '}',
   ].join('\n');
 
   var style = document.createElement('style');

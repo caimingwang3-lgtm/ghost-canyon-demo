@@ -4416,16 +4416,48 @@
     }
 
     updateBossMoveCardCopy() {
-      const isRift = this.boss.encounter === 'rift';
-      const moves = isRift
-        ? [['靈魂震爆', '围绕巫妖扩散的法术；慢速范围大，快速范围小，可跳跃或拉开距离', '慢/快'], ['追魂冥火', '裂隙释放多层魂火弹幕；辨认高度、移动或跳跃穿过', 'P1'], ['幽魂換位', '先标记传送落点，再发生圆形冲击；离开落点范围', 'P2'], ['亡魂印爆', '在你脚下留下符印后爆发；走出紫色圆印或跳起', 'P3']]
-        : [['幽影重斩', '伤害提高；正面格挡或近身弹反，范围更宽', '精英'], ['强化暗影弹', '更快飞行、命中伤害提高；跳/闪或正面格挡', '精英'], ['强化影袭', '前摇缩短、冲击更强；可跳过路径或弹反', '精英'], ['强化震荡', '恢复缩短、伤害提高；跳跃或进入两侧安全区', '精英']];
-      ['moveSlash', 'moveShot', 'moveRush', 'moveWave'].forEach((id, index) => {
-        const card = document.querySelector(`#${id}`);
-        card.querySelector('b').textContent = moves[index][0];
-        card.querySelector('small').textContent = moves[index][1];
-        card.querySelector('.move-tag').textContent = moves[index][2];
-      });
+      const b = this.boss;
+      const isRift = b.encounter === 'rift';
+      const fiery = isRift && b.phase === 5 && b.revived;
+      // 每条：名称 / 怎么躲（面板的核心作用就是教这个）/ 标签 / 图标样式 / 图标
+      let moves;
+      if (!isRift) {
+        moves = [
+          ['幽影重斬', '傷害提高、範圍更寬；正面格擋或近身彈反', '精英', 'low-symbol', '◉'],
+          ['強化暗影彈', '飛得更快、傷害更高；跳 / 閃或正面格擋', '精英', 'drop-symbol', '✧'],
+          ['強化影襲', '前搖縮短、衝擊更強；跳過路徑或彈反', '精英', 'combo-symbol', '⌾'],
+          ['強化震盪', '收招更短、傷害提高；跳躍或進兩側安全區', '精英', 'wave-symbol', '⌘'],
+        ];
+      } else if (fiery) {
+        moves = [
+          ['靈魂震爆', '圍繞巫妖擴散的法術；跳躍或拉開距離', 'P5', 'low-symbol', '◉'],
+          ['焚天震盪', '近身爆發並把你彈飛；保持 140px 以外', 'P5', 'wave-symbol', '⌘'],
+          ['獄火華', '地面依序噴 5 根火柱；跟著節奏換位置', 'P5', 'drop-symbol', '✧'],
+          ['巨手抓取', '骨手伸出後攥緊；抓取前離開手的前方', 'P5', 'combo-symbol', '⌾'],
+          ['隕石雨', '火球沿一個方向逐顆砸落；往反方向走', 'P5-2', 'drop-symbol', '✧'],
+          ['焚身衝刺', '貼地高速橫衝（一條線）；跳起來或側閃', 'P5-2', 'combo-symbol', '⌾'],
+        ];
+      } else {
+        moves = [
+          ['靈魂震爆', '圍繞巫妖擴散的法術；慢速範圍大、快速範圍小，跳躍或拉開距離', 'P1', 'low-symbol', '◉'],
+          ['亡魂凝視', '準星追蹤你 1 秒，鎖定後射出一道貫穿豎線；橫向離開', 'P1', 'low-symbol', '◉'],
+          ['追魂冥火', '多層魂火彈幕；辨認高度、移動或跳躍穿過', 'P1', 'drop-symbol', '✧'],
+          ['幽魂換位', '先標記傳送落點，再發生圓形衝擊；離開落點範圍', 'P2', 'combo-symbol', '⌾'],
+          ['冥河之潮', '貼地衝擊波掃過全場；必須跳起來躲', 'P2', 'wave-symbol', '⌘'],
+          ['亡魂印爆', '在你腳下留下符印後爆發；走出紫色圓印或跳起', 'P3', 'wave-symbol', '⌘'],
+        ];
+      }
+      const wrap = document.querySelector('.move-card');
+      if (!wrap) return;
+      wrap.innerHTML = moves.map((m) => (
+        `<div class="move-item"><span class="move-symbol ${m[3]}">${m[4]}</span>`
+        + `<div><b>${m[0]}</b><small>${m[1]}</small>`
+        + `<span class="move-tag">${m[2]}</span></div></div>`
+      )).join('');
+      // 招式多了之后面板会变长，给个滚动上限，避免把整页撑开
+      wrap.style.maxHeight = '290px';
+      wrap.style.overflowY = 'auto';
+      wrap.style.webkitOverflowScrolling = 'touch';
     }
 
     updateUi() {
