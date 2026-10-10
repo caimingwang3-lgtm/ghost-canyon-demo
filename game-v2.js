@@ -4408,11 +4408,15 @@
       }
     }
 
+    // ① 招式高亮：按 data-move 查，并且全部 null 安全。
+    //    面板现在是动态生成的，不能再依赖写死的 id——
+    //    一旦取到 null 就 .classList 崩溃，整个 Demo 直接打不开。
     updateMoveCard(move, state) {
-      const ids = { slash: 'moveSlash', shot: 'moveShot', rush: 'moveRush', wave: 'moveWave' };
-      Object.values(ids).forEach((id) => document.querySelector(`#${id}`).classList.remove('active'));
-      if (ids[move]) document.querySelector(`#${ids[move]}`).classList.add('active');
-      document.querySelector('#moveTimer').textContent = state;
+      document.querySelectorAll('.move-item').forEach((el) => el.classList.remove('active'));
+      const hit = document.querySelector(`.move-item[data-move="${move}"]`);
+      if (hit) hit.classList.add('active');
+      const timer = document.querySelector('#moveTimer');
+      if (timer) timer.textContent = state;
     }
 
     updateBossMoveCardCopy() {
@@ -4423,34 +4427,35 @@
       let moves;
       if (!isRift) {
         moves = [
-          ['幽影重斬', '傷害提高、範圍更寬；正面格擋或近身彈反', '精英', 'low-symbol', '◉'],
-          ['強化暗影彈', '飛得更快、傷害更高；跳 / 閃或正面格擋', '精英', 'drop-symbol', '✧'],
-          ['強化影襲', '前搖縮短、衝擊更強；跳過路徑或彈反', '精英', 'combo-symbol', '⌾'],
-          ['強化震盪', '收招更短、傷害提高；跳躍或進兩側安全區', '精英', 'wave-symbol', '⌘'],
+          ['幽影重斬', '傷害提高、範圍更寬；正面格擋或近身彈反', '精英', 'low-symbol', '◉', 'slash'],
+          ['強化暗影彈', '飛得更快、傷害更高；跳 / 閃或正面格擋', '精英', 'drop-symbol', '✧', 'shot'],
+          ['強化影襲', '前搖縮短、衝擊更強；跳過路徑或彈反', '精英', 'combo-symbol', '⌾', 'rush'],
+          ['強化震盪', '收招更短、傷害提高；跳躍或進兩側安全區', '精英', 'wave-symbol', '⌘', 'wave'],
         ];
       } else if (fiery) {
         moves = [
-          ['靈魂震爆', '圍繞巫妖擴散的法術；跳躍或拉開距離', 'P5', 'low-symbol', '◉'],
-          ['焚天震盪', '近身爆發並把你彈飛；保持 140px 以外', 'P5', 'wave-symbol', '⌘'],
-          ['獄火華', '地面依序噴 5 根火柱；跟著節奏換位置', 'P5', 'drop-symbol', '✧'],
-          ['巨手抓取', '骨手伸出後攥緊；抓取前離開手的前方', 'P5', 'combo-symbol', '⌾'],
-          ['隕石雨', '火球沿一個方向逐顆砸落；往反方向走', 'P5-2', 'drop-symbol', '✧'],
-          ['焚身衝刺', '貼地高速橫衝（一條線）；跳起來或側閃', 'P5-2', 'combo-symbol', '⌾'],
+          ['靈魂震爆', '圍繞巫妖擴散的法術；跳躍或拉開距離', 'P5', 'low-symbol', '◉', 'slash'],
+          ['焚天震盪', '近身爆發並把你彈飛；保持 140px 以外', 'P5', 'wave-symbol', '⌘', 'shock'],
+          ['獄火華', '地面依序噴 5 根火柱；跟著節奏換位置', 'P5', 'drop-symbol', '✧', 'bloom'],
+          ['巨手抓取', '骨手伸出後攥緊；抓取前離開手的前方', 'P5', 'combo-symbol', '⌾', 'handGrab'],
+          ['隕石雨', '火球沿一個方向逐顆砸落；往反方向走', 'P5-2', 'drop-symbol', '✧', 'meteor'],
+          ['焚身衝刺', '貼地高速橫衝（一條線）；跳起來或側閃', 'P5-2', 'combo-symbol', '⌾', 'dash'],
         ];
       } else {
         moves = [
-          ['靈魂震爆', '圍繞巫妖擴散的法術；慢速範圍大、快速範圍小，跳躍或拉開距離', 'P1', 'low-symbol', '◉'],
-          ['亡魂凝視', '準星追蹤你 1 秒，鎖定後射出一道貫穿豎線；橫向離開', 'P1', 'low-symbol', '◉'],
-          ['追魂冥火', '多層魂火彈幕；辨認高度、移動或跳躍穿過', 'P1', 'drop-symbol', '✧'],
-          ['幽魂換位', '先標記傳送落點，再發生圓形衝擊；離開落點範圍', 'P2', 'combo-symbol', '⌾'],
-          ['冥河之潮', '貼地衝擊波掃過全場；必須跳起來躲', 'P2', 'wave-symbol', '⌘'],
-          ['亡魂印爆', '在你腳下留下符印後爆發；走出紫色圓印或跳起', 'P3', 'wave-symbol', '⌘'],
+          ['靈魂震爆', '圍繞巫妖擴散的法術；慢速範圍大、快速範圍小，跳躍或拉開距離', 'P1', 'low-symbol', '◉', 'slash'],
+          ['亡魂凝視', '準星追蹤你 1 秒，鎖定後射出一道貫穿豎線；橫向離開', 'P1', 'low-symbol', '◉', 'gaze'],
+          ['追魂冥火', '多層魂火彈幕；辨認高度、移動或跳躍穿過', 'P1', 'drop-symbol', '✧', 'shot'],
+          ['幽魂換位', '先標記傳送落點，再發生圓形衝擊；離開落點範圍', 'P2', 'combo-symbol', '⌾', 'rush'],
+          ['冥河之潮', '貼地衝擊波掃過全場；必須跳起來躲', 'P2', 'wave-symbol', '⌘', 'tide'],
+          ['亡魂印爆', '在你腳下留下符印後爆發；走出紫色圓印或跳起', 'P3', 'wave-symbol', '⌘', 'wave'],
         ];
       }
       const wrap = document.querySelector('.move-card');
       if (!wrap) return;
       wrap.innerHTML = moves.map((m) => (
-        `<div class="move-item"><span class="move-symbol ${m[3]}">${m[4]}</span>`
+        `<div class="move-item" data-move="${m[5]}">`
+        + `<span class="move-symbol ${m[3]}">${m[4]}</span>`
         + `<div><b>${m[0]}</b><small>${m[1]}</small>`
         + `<span class="move-tag">${m[2]}</span></div></div>`
       )).join('');
