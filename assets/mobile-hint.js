@@ -148,6 +148,10 @@
 
   function apply() {
     var portrait = window.innerHeight > window.innerWidth;
+    // 手机真的转成横屏了（自动旋转是开的）→ 撤掉 CSS 旋转，否则会二次旋转把画面转歪
+    if (!portrait && document.documentElement.classList.contains('mh-ls')) {
+      document.documentElement.classList.remove('mh-ls');
+    }
     var narrow = Math.min(window.innerWidth, window.innerHeight) < 560;
     var show = portrait && narrow && !banner.dataset.done
       && !document.documentElement.classList.contains('mh-ls');
