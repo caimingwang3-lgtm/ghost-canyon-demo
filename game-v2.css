@@ -177,3 +177,26 @@
   .demo-v2 #stage { max-height: none !important; }
   .demo-v2 .play-column { padding-bottom: 74px !important; }
 }
+
+
+/* --------------------------------------------------------------------------
+   竖屏横屏提示
+   16:9 战场在 390px 宽的竖屏上天生只有 199px 高（占屏 21%），
+   横过来能到 473x266（38%）。这里用纯 CSS ::before 提示一句，
+   不新增 HTML、不动 JS，也不挡「完整试炼」按钮。
+   -------------------------------------------------------------------------- */
+@media (pointer: coarse) and (orientation: portrait) {
+  .demo-v2 .play-column::before {
+    content: "↻ 建議橫屏遊玩，戰場更大（點螢幕右上角即可）";
+    display: block;
+    margin: 0 0 8px;
+    padding: 7px 12px;
+    border: 1px solid #4a5a52;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(255,180,90,.14), rgba(255,180,90,.04));
+    color: #e8cfa4;
+    font: 12px/1.5 "Noto Sans SC", system-ui, sans-serif;
+    text-align: center;
+    letter-spacing: .04em;
+  }
+}
