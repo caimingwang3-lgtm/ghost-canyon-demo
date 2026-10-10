@@ -1768,7 +1768,26 @@
             this.resolveBossMove(b.move);
           }
         }
-        if (b.timer <= 0 && b.mode === 'active') this.beginBossRecovery(b.moveRecover * this.phaseSpeed());
+        if (b.timer <= 0 && b.mode === 'active') {
+          // 「压哨衔接」：高阶段有概率打完不回收招，下一招的预警直接跟上。
+          // 压迫感的来源是「节奏不给你喘息」，不是「预警更短」——
+          // 预警时长必须保留，否则会变成不公平而不是有压迫感。
+          const chainChance = { 1: 0, 2: 0, 3: 0.30, 4: 0.45, 5: 0.65 }[b.phase] || 0;
+          const streak = b.chainStreak || 0;
+          if (b.encounter === 'rift' && b.hp > 0 && streak < 2 && Math.random() < chainChance) {
+            b.chainStreak = streak + 1;
+            b.mode = 'idle';
+            b.timer = 0;          // 待机归零 → 下一帧立刻 startBossMove()
+            b.move = '';
+            b.hitResolved = true;
+            this.setMessage(`第 ${b.chainStreak + 1} 段——它沒有收招，下一招直接跟上。`);
+          } else {
+            // 连段用完（或没触发）→ 必须给一个真实的反击窗口，保证公平
+            if (streak >= 2) this.setMessage('連段結束：這是你的完整反擊窗口。');
+            b.chainStreak = 0;
+            this.beginBossRecovery(b.moveRecover * this.phaseSpeed());
+          }
+        }
       } else if (b.mode === 'recover') {
         b.timer -= dt;
         if (b.timer <= 0) {
@@ -1893,6 +1912,7 @@
       b.timer = tell * this.phaseSpeed() * (combo ? 0.6 : 1);
       b.hitResolved = false;
       b.handLocked = false;
+      b.chainStreak = 0;          // 新招式开始 → 连段重新计数
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
       if (move === 'wave') this.playSfx('sfx_rune_mark', 0.24);
