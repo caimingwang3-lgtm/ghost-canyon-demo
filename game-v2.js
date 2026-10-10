@@ -567,7 +567,7 @@
       if (this.room === 'boss') return;
       // ⑤ 热身关的门被幽影封住：必须成功弹反一次才开。
       // 只看文字提示是学不会弹反的，第一次遇到必然是乱按——必须强制练一次。
-      const sealed = this.room === 'warmup' && this.stats.parries < 1;
+      const sealed = this.room === 'warmup' && this.stats.parries < 1 && !this.warmupSealLifted;
       const open = this.entities.length === 0 && !sealed;
       const color = open ? 0x89d6ab : sealed ? 0xc98aff : 0x58646c;
       g.fillStyle(0x101720, 0.95).fillRoundedRect(867, FLOOR - 116, 64, 116, 18);
@@ -1142,6 +1142,19 @@
 
       // ⑤ 教学门：热身关必须先成功弹反一次，门才会开
       const parryGate = this.room === 'warmup' && this.stats.parries < 1;
+      // ② 防死锁：热身关的门要求「成功弹反一次」才开。
+      //    如果玩家一直弹不中，就会被永久卡住——作品集 Demo 不能出现硬卡死。
+      //    清完小怪 20 秒仍未弹反成功，封印自动消退。
+      if (this.room === 'warmup' && this.entities.length === 0
+          && this.stats.parries < 1 && !this.warmupSealLifted) {
+        this.warmupSealTimer = (this.warmupSealTimer || 0) + dt;
+        if (this.warmupSealTimer > 20) {
+          this.warmupSealLifted = true;
+          this.setMessage('封印自行消退了——出口已開。下次在敵人抬手的瞬間按 E 試試彈反。');
+        } else if ((this.warmupSealTimer % 6) < dt && this.warmupSealTimer > 6) {
+          this.setMessage(`封印還在：需要成功彈反一次。按 E 彈反，或等 ${Math.ceil(20 - this.warmupSealTimer)} 秒後封印自動消退。`);
+        }
+      }
       if (this.room !== 'boss' && this.player.x > 882 && this.entities.length === 0 && !parryGate) {
         this.enterRoom(this.roomIndex + 1);
       } else if (parryGate && this.player.x > 830 && this.entities.length === 0) {
@@ -1368,7 +1381,9 @@
             if (enemy.type === 'ranged') {
               this.spawnProjectile(enemy.sprite.x + enemy.lockedDirection * 36, FLOOR - 88, enemy.lockedDirection, 270, 15, '影弩');
             } else if (Math.abs(this.player.x - enemy.sprite.x) <= 132 && Math.sign(this.player.x - enemy.sprite.x || 1) === enemy.lockedDirection) {
-              this.resolveIncoming({ source: '影衛突刺', damage: 19, attackerX: enemy.sprite.x, range: 132, guardable: true, parryable: true, parryRange: 106 });
+              // ① 弹反范围必须 ≥ 判定范围：range 132 > parryRange 106 会形成死区
+              //    （被打中但弹不了）。Boss 招式上一轮已修，这条是小怪。
+              this.resolveIncoming({ source: '影衛突刺', damage: 19, attackerX: enemy.sprite.x, range: 132, guardable: true, parryable: true, parryRange: 152 });
             } else {
               this.setMessage('影衛突刺落空：它不會在出手後追蹤你。');
             }
@@ -4206,7 +4221,12 @@
       if (this.status === 'paused') return '已暂停。再按 Esc 或点击“继续”恢复。';
       if (this.status !== 'run') return '选择完整试炼体验关卡节奏，或直达Boss观察战斗系统。';
       if (this.room === 'boss') return this.boss.encounter === 'rift' ? '巫妖法术有不同安全解：震爆看范围、冥火看高度、换位看落点、符印离开圆圈。' : '精英横斩可格挡/弹反；突进前摇锁定方向，保持移动并抓住收招反击。';
-      if (this.entities.length === 0) return '前方出口已开启，向右移动进入下一段。';
+      if (this.entities.length === 0) {
+        if (this.room === 'warmup' && this.stats.parries < 1 && !this.warmupSealLifted) {
+          return '出口被幽影封印：需要成功彈反一次。按 E 彈反，或等封印自行消退。';
+        }
+        return '前方出口已开启，向右移动进入下一段。';
+      }
       return '攻击有前摇与收招；失误后有短暂无敌，留意敌人下一次提示。';
     }
 
