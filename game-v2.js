@@ -187,8 +187,8 @@
     1: [['slash', 'shot', 'gaze', 'slash'], ['gaze', 'shot', 'slash', 'shot']],
     // ② 招式压到 4 招：形状、颜色、预警各不相同，玩家才分得清
     2: [['slash', 'hand', 'tide', 'wave'], ['tide', 'hand', 'slash', 'rush']],
-    3: [['hand', 'slash', 'gaze', 'wave'], ['rush', 'hand', 'tide', 'slash']],
-    4: [['rush', 'hand', 'tide', 'wave'], ['hand', 'gaze', 'rush', 'slash']],
+    3: [['hand', 'slash', 'gaze', 'souls'], ['rush', 'hand', 'tide', 'wave']],
+    4: [['rush', 'hand', 'souls', 'wave'], ['hand', 'gaze', 'rush', 'souls']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
     // ② P5 只留 4 招，全都是「一眼能认出来」的：
     //    冲撞（横冲）/ 抓取（手伸出）/ 震爆（圆环）/ 锤击（手高举）
@@ -197,7 +197,7 @@
         ['handSlam', 'bloom', 'rush', 'handGrab']],
     // 第二阶段：招式更密，隕石雨穿插其中
     '5b': [['meteor', 'shock', 'dash', 'handGrab'],
-           ['dash', 'bloom', 'meteor', 'slash'],
+           ['dash', 'bloom', 'meteor', 'souls'],
            ['handGrab', 'shock', 'dash', 'bloom']],
   };
   const RIFT_MOVES = {
@@ -214,6 +214,8 @@
     handSlam: { ...BOSS_MOVES.wave, label: '巨手錘擊', tell: 1.30, active: 0.42, recover: 1.05, damage: 38, range: 128, guardable: false, parryable: false },
     handGrab: { ...BOSS_MOVES.wave, label: '巨手抓取', tell: 1.45, active: 0.45, recover: 1.0, damage: 34, range: 250, guardable: false, parryable: false },
     // ── 普通巫妖：法术类 ──────────────────────────────
+    // 魂噬：一次放出 6 顆追蹤魂球，逼玩家持續移動（追蹤類壓力）
+    souls: { ...BOSS_MOVES.wave, label: '魂噬', tell: 1.05, active: 3.4, recover: 0.95, damage: 14, range: 0, guardable: false, parryable: false },
     // 冥河之潮：貼地衝擊波，必須跳起來躲
     tide: { ...BOSS_MOVES.wave, label: '冥河之潮', tell: 0.95, active: 0.85, recover: 0.70, damage: 16, range: 0, guardable: false, parryable: false },
     // 亡魂凝視：準星追蹤後射出一道貫穿的豎線。法術 → 可彈反，但只回能量不給架勢
@@ -683,6 +685,13 @@
       this.boss.tide = null;
       this.boss.gaze = null;
       this.boss.bloom = null;
+      if (this.boss.souls) {
+        this.boss.souls.forEach((o) => {
+          if (o.spr) o.spr.destroy();
+          if (o.halo) o.halo.destroy();
+        });
+        this.boss.souls = null;
+      }
       this.boss.hand = null;
       this.boss.handGone = false;
       this.playerState.grabbed = null;
@@ -1025,6 +1034,7 @@
       this.updateTide(dt);
       this.updateGaze(dt);
       this.updateBloom(dt);
+      this.updateSouls(dt);
       this.updateProjectiles(dt);
       this.updateEffects(dt);
       this.updateEmbers(dt);
@@ -1716,6 +1726,7 @@
           if (b.move === 'gaze' && b.encounter === 'rift') this.castGaze();
           if (b.move === 'shock' && b.encounter === 'rift') this.castShock();
           if (b.move === 'bloom' && b.encounter === 'rift') this.castBloom();
+          if (b.move === 'souls' && b.encounter === 'rift') this.castSouls();
           if (b.move === 'hand') this.castHand();
           if (b.move === 'handSlam') this.castHandSlam();
           if (b.move === 'handGrab') this.castHandGrab();
@@ -1946,6 +1957,7 @@
       b.tide = null;              // 新招式开始 → 清掉上一招残留的实体
       b.gaze = null;
       b.bloom = null;
+      b.souls = null;
       b.shockDone = false;
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
@@ -3516,6 +3528,68 @@
       if (g.t > 0.55) this.boss.gaze = null;
     }
 
+    // ── 魂噬：一次六顆追蹤魂球 ──────────────────────────
+    castSouls() {
+      const b = this.boss;
+      b.souls = [];
+      const n = 6;
+      for (let i = 0; i < n; i += 1) {
+        // 先扇形散開，之後各自轉向玩家——散開是為了覆蓋面，轉向是為了追
+        const ang = -Math.PI / 2 + (i - (n - 1) / 2) * 0.40;
+        const sp = 150;
+        const spr = this.add.circle(this.bossSprite.x, FLOOR - 150, 13, 0xb98cff, 0.92)
+          .setDepth(23).setStrokeStyle(3, 0xefe0ff, 0.9);
+        const halo = this.add.circle(this.bossSprite.x, FLOOR - 150, 22, 0x8b5cf6, 0.28).setDepth(22);
+        b.souls.push({
+          x: this.bossSprite.x, y: FLOOR - 150,
+          vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+          life: 4.2, hit: false, spr, halo,
+        });
+      }
+      this.playSfx('sfx_rune_burst', 0.5);
+      this.cameras.main.shake(300, 0.009);
+      this.setMessage('魂噬：六顆魂球會一路追著你——保持移動，別停下來。');
+    }
+
+    updateSouls(dt) {
+      const b = this.boss;
+      const arr = b.souls;
+      if (!arr || !arr.length) return;
+      const px = this.player.x;
+      const py = this.player.y - 90;
+      for (let i = arr.length - 1; i >= 0; i -= 1) {
+        const o = arr[i];
+        // 追蹤：朝玩家轉向，但轉向速率有限——追得到，但不是躲不掉
+        const dx = px - o.x;
+        const dy = py - o.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const turn = 300 * dt;
+        o.vx += (dx / d) * turn;
+        o.vy += (dy / d) * turn;
+        const sp = Math.hypot(o.vx, o.vy) || 1;
+        const cap = 205;
+        if (sp > cap) { o.vx = (o.vx / sp) * cap; o.vy = (o.vy / sp) * cap; }
+        o.x += o.vx * dt;
+        o.y += o.vy * dt;
+        o.life -= dt;
+        if (o.spr) o.spr.setPosition(o.x, o.y);
+        if (o.halo) o.halo.setPosition(o.x, o.y);
+        if (Math.random() < 0.45) this.spawnBurst(o.x, o.y, 0xd8b4ff, 1);
+        if (!o.hit && Math.abs(o.x - this.player.x) < 34
+            && Math.abs(o.y - (this.player.y - 80)) < 72
+            && this.playerState.invuln <= 0) {
+          o.hit = true;
+          this.playerDamage('魂噬', 14);
+        }
+        if (o.life <= 0 || o.y > FLOOR + 40 || o.x < -60 || o.x > WORLD_W + 60) {
+          if (o.spr) o.spr.destroy();
+          if (o.halo) o.halo.destroy();
+          arr.splice(i, 1);
+        }
+      }
+      if (!arr.length) b.souls = null;
+    }
+
     // ── 焚天震盪：近身爆發，把玩家彈飛 ──────────────────
     castShock() {
       const b = this.boss;
@@ -4227,6 +4301,18 @@
             g.lineStyle(2 + k * 2, 0xd8b4ff, 0.9).lineBetween(this.player.x - 46, 0, this.player.x - 46, FLOOR);
             g.lineBetween(this.player.x + 46, 0, this.player.x + 46, FLOOR);
             this.drawCountdown(g, this.player.x, FLOOR - 5, 46, k, '#d8b4ff', 0x6b3fa0);
+          } else if (move === 'souls') {
+            // 魂噬：頭頂聚起六顆魂球，預告「會追你」
+            const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().souls.tell * this.phaseSpeed())));
+            for (let i = 0; i < 6; i += 1) {
+              const ang = -Math.PI / 2 + (i - 2.5) * 0.40;
+              const rr = 40 + k * 74;
+              const ox = this.bossSprite.x + Math.cos(ang) * rr;
+              const oy = FLOOR - 150 + Math.sin(ang) * rr * 0.5;
+              g.fillStyle(0xb98cff, 0.22 + k * 0.4).fillCircle(ox, oy, 11 + k * 4);
+              g.lineStyle(2, 0xefe0ff, 0.85).strokeCircle(ox, oy, 11 + k * 4);
+            }
+            g.lineStyle(2, 0xd8b4ff, 0.55).strokeCircle(this.bossSprite.x, FLOOR - 150, 96);
           } else if (move === 'shock') {
             // 焚天震盪：近身紅圈收縮，代表「會被彈飛」
             const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().shock.tell * this.phaseSpeed())));
