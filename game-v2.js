@@ -184,21 +184,21 @@
     3: [['rush', 'slash', 'wave', 'rush', 'shot', 'slash'], ['slash', 'rush', 'wave', 'slash', 'shot', 'rush']],
   };
   const RIFT_PATTERNS = {
-    1: [['slash', 'shot', 'slash', 'shot'], ['shot', 'slash', 'shot', 'slash']],
+    1: [['slash', 'shot', 'gaze', 'slash'], ['gaze', 'shot', 'slash', 'shot']],
     // ② 招式压到 4 招：形状、颜色、预警各不相同，玩家才分得清
-    2: [['slash', 'hand', 'rush', 'shot'], ['hand', 'slash', 'shot', 'rush']],
-    3: [['hand', 'slash', 'rush', 'shot'], ['rush', 'hand', 'slash', 'shot']],
-    4: [['rush', 'hand', 'slash', 'shot'], ['hand', 'rush', 'shot', 'slash']],
+    2: [['slash', 'hand', 'tide', 'rush'], ['tide', 'hand', 'slash', 'rush']],
+    3: [['hand', 'slash', 'gaze', 'rush'], ['rush', 'hand', 'tide', 'slash']],
+    4: [['rush', 'hand', 'tide', 'slash'], ['hand', 'gaze', 'rush', 'slash']],
     // P5：不再有喘息段落，四式法术高频循环，靠密度压垮玩家
     // ② P5 只留 4 招，全都是「一眼能认出来」的：
     //    冲撞（横冲）/ 抓取（手伸出）/ 震爆（圆环）/ 锤击（手高举）
     //    砍掉：魂火环伺、焚天、焚身乱舞——它们和上面几招在红圈上长得太像了
-    5: [['rush', 'handGrab', 'slash', 'handSlam'],
-        ['handSlam', 'rush', 'handGrab', 'slash']],
+    5: [['rush', 'handGrab', 'shock', 'slash'],
+        ['handSlam', 'bloom', 'rush', 'handGrab']],
     // 第二阶段：招式更密，隕石雨穿插其中
-    '5b': [['meteor', 'slash', 'dash', 'handGrab'],
-           ['dash', 'handSlam', 'meteor', 'slash'],
-           ['handGrab', 'meteor', 'dash', 'handSlam']],
+    '5b': [['meteor', 'shock', 'dash', 'handGrab'],
+           ['dash', 'bloom', 'meteor', 'slash'],
+           ['handGrab', 'shock', 'dash', 'bloom']],
   };
   const RIFT_MOVES = {
     slash: { ...BOSS_MOVES.slash, label: '靈魂震爆', tell: 1.45, active: 0.22, recover: 1.3, damage: 22, range: 205 },
@@ -213,6 +213,14 @@
     // C 燃烧形态：巨手长在身上，锤击与抓取
     handSlam: { ...BOSS_MOVES.wave, label: '巨手錘擊', tell: 1.30, active: 0.42, recover: 1.05, damage: 38, range: 128, guardable: false, parryable: false },
     handGrab: { ...BOSS_MOVES.wave, label: '巨手抓取', tell: 1.45, active: 0.45, recover: 1.0, damage: 34, range: 250, guardable: false, parryable: false },
+    // ── 普通巫妖：法术类 ──────────────────────────────
+    // 冥河之潮：貼地衝擊波，必須跳起來躲
+    tide: { ...BOSS_MOVES.wave, label: '冥河之潮', tell: 0.95, active: 0.85, recover: 0.70, damage: 16, range: 0, guardable: false, parryable: false },
+    // 亡魂凝視：準星追蹤後射出一道貫穿的豎線。法術 → 可彈反，但只回能量不給架勢
+    gaze: { ...BOSS_MOVES.wave, label: '亡魂凝視', tell: 1.05, active: 0.35, recover: 0.75, damage: 20, range: 0, guardable: false, parryable: true },
+    // ── 火焰巫妖：近身震盪 + 序列火柱 ────────────────
+    shock: { ...BOSS_MOVES.wave, label: '焚天震盪', tell: 0.85, active: 0.35, recover: 0.90, damage: 18, range: 0, guardable: false, parryable: false },
+    bloom: { ...BOSS_MOVES.wave, label: '獄火華', tell: 1.10, active: 1.40, recover: 0.70, damage: 15, range: 0, guardable: false, parryable: false },
     // 第二阶段：焚身衝刺。横向高速冲过全场，留下火痕
     dash: { ...BOSS_MOVES.rush, label: '焚身衝刺', tell: 0.92, active: 0.55, recover: 0.85, damage: 22, range: 0, guardable: false, parryable: false },
     // 第二阶段：隕石雨。火球沿一个方向依次砸落
@@ -672,6 +680,9 @@
       this.boss.blitzSpots = null;
       this.meteorRain = null;
       this.meteorCount = 0;
+      this.boss.tide = null;
+      this.boss.gaze = null;
+      this.boss.bloom = null;
       this.boss.hand = null;
       this.boss.handGone = false;
       this.playerState.grabbed = null;
@@ -1011,6 +1022,9 @@
       this.updateBoss(dt);
       this.updateOrbs(dt);
       this.updateMeteorRain(dt);
+      this.updateTide(dt);
+      this.updateGaze(dt);
+      this.updateBloom(dt);
       this.updateProjectiles(dt);
       this.updateEffects(dt);
       this.updateEmbers(dt);
@@ -1691,6 +1705,10 @@
           if (b.move === 'blitz' && b.encounter === 'rift') this.castBlitz();
           if (b.move === 'meteor' && b.encounter === 'rift') this.castMeteorRain();
           if (b.move === 'dash' && b.encounter === 'rift') this.castDash();
+          if (b.move === 'tide' && b.encounter === 'rift') this.castTide();
+          if (b.move === 'gaze' && b.encounter === 'rift') this.castGaze();
+          if (b.move === 'shock' && b.encounter === 'rift') this.castShock();
+          if (b.move === 'bloom' && b.encounter === 'rift') this.castBloom();
           if (b.move === 'hand') this.castHand();
           if (b.move === 'handSlam') this.castHandSlam();
           if (b.move === 'handGrab') this.castHandGrab();
@@ -1918,6 +1936,10 @@
       b.hitResolved = false;
       b.handLocked = false;
       b.chainStreak = 0;          // 新招式开始 → 连段重新计数
+      b.tide = null;              // 新招式开始 → 清掉上一招残留的实体
+      b.gaze = null;
+      b.bloom = null;
+      b.shockDone = false;
       // 预警音：本作核心是“看懂预警”，声音和视觉预警必须同时到
       this.playSfx('sfx_boss_tell', 0.26);
       if (move === 'wave') this.playSfx('sfx_rune_mark', 0.24);
@@ -2212,13 +2234,13 @@
       // ② 窗口 0.55 → 0.40：按住混不过去了，但也不能过短——
       //    弹反是「看到金色提示环再按」，窗口要容得下人的反应时间。
       //    失手冷却保持 0.24，按空了不至于干等太久。
-      p.parryWindow = 0.40;
+      p.parryWindow = 0.45;
       p.parryCooldown = 0.24;
       p.parryPending = true;
       p.parryAnim = 0.26;
       this.stats.parryAttempts += 1;
       this.player.play('hero-attack', true);
-      this.setMessage('彈反窗口 0.40 秒：看到金色提示環再按 E，按住不放無效。');
+      this.setMessage('彈反窗口 0.45 秒：看到金色提示環再按 E，按住不放無效。');
     }
 
     dodge() {
@@ -3441,6 +3463,113 @@
     }
 
     // 隕石雨：火球沿一个方向一颗接一颗砸下来
+    // ── 冥河之潮：貼地衝擊波，跳起來躲 ──────────────────
+    castTide() {
+      const b = this.boss;
+      b.tide = { x: this.bossSprite.x + b.facing * 40, dir: b.facing, t: 0 };
+      this.playSfx('sfx_boss_tell', 0.42);
+      this.cameras.main.shake(240, 0.006);
+      this.setMessage('冥河之潮：貼地的衝擊波掃過來——跳起來躲。');
+    }
+
+    updateTide(dt) {
+      const b = this.boss;
+      const t = b.tide;
+      if (!t) return;
+      t.t += dt;
+      t.x += t.dir * 520 * dt;
+      if (Math.random() < 0.7) this.spawnBurst(t.x, FLOOR - 16, 0x9fe0ff, 3);
+      if (this.isPlayerGrounded() && Math.abs(this.player.x - t.x) < 46
+          && this.playerState.invuln <= 0 && this.playerState.hurtTimer <= 0) {
+        this.playerDamage('冥河之潮', 16);
+      }
+      if (t.t > 3.4 || t.x < -60 || t.x > WORLD_W + 60) b.tide = null;
+    }
+
+    // ── 亡魂凝視：準星追蹤 → 鎖定 → 貫穿豎線 ────────────
+    castGaze() {
+      const b = this.boss;
+      b.gaze = { x: this.player.x, t: 0, fired: true, hitDone: false };
+      this.playSfx('sfx_rune_burst', 0.42);
+      this.cameras.main.shake(200, 0.006);
+      this.spawnBurst(b.gaze.x, FLOOR - 120, 0xd8b4ff, 22);
+      this.setMessage('亡魂凝視命中：鎖定的位置會射出一道貫穿豎線，橫向離開即可。');
+    }
+
+    updateGaze(dt) {
+      const g = this.boss.gaze;
+      if (!g) return;
+      g.t += dt;
+      if (!g.hitDone && g.t < 0.30
+          && Math.abs(this.player.x - g.x) < 46
+          && this.playerState.invuln <= 0 && this.playerState.hurtTimer <= 0) {
+        g.hitDone = true;
+        this.playerDamage('亡魂凝視', 20);
+      }
+      if (g.t > 0.55) this.boss.gaze = null;
+    }
+
+    // ── 焚天震盪：近身爆發，把玩家彈飛 ──────────────────
+    castShock() {
+      const b = this.boss;
+      b.shockDone = true;
+      this.playSfx('sfx_rune_burst', 0.55);
+      this.cameras.main.shake(380, 0.014);
+      this.cameras.main.flash(180, 255, 150, 60);
+      for (let i = 0; i < 3; i += 1) {
+        const ring = this.add.circle(this.bossSprite.x, FLOOR - 40, 40 + i * 34, 0x000000, 0)
+          .setStrokeStyle(6 - i, 0xff8a3a, 0.9).setDepth(21);
+        this.tweens.add({ targets: ring, scale: 2.6, alpha: 0, duration: 420 + i * 90,
+          onComplete: () => ring.destroy() });
+      }
+      this.spawnBurst(this.bossSprite.x, FLOOR - 60, 0xffd27a, 30);
+      this.spawnBurst(this.bossSprite.x, FLOOR - 90, 0xff5a1e, 22);
+      const dx = this.player.x - this.bossSprite.x;
+      if (Math.abs(dx) < 140 && this.playerState.invuln <= 0) {
+        this.playerDamage('焚天震盪', 18);
+        // 震盪的核心作用是「把人推开」而不是伤害：清掉你的站位，逼你重新接近
+        const push = Math.sign(dx || this.boss.facing) || 1;
+        this.player.body.setVelocityX(push * 620);
+        this.player.body.setVelocityY(-340);
+        this.playerState.hurtTimer = Math.max(this.playerState.hurtTimer, 0.45);
+        this.floatText(this.player.x, this.player.y - 150, '被彈飛', '#ffb45c');
+      }
+    }
+
+    // ── 獄火華：地面依序噴出火柱，跟著節奏換位置 ────────
+    castBloom() {
+      const b = this.boss;
+      const spots = [];
+      const base = this.player.x;
+      for (let i = 0; i < 5; i += 1) {
+        let x = base + (i - 2) * 128 + (Math.random() - 0.5) * 56;
+        x = Math.max(64, Math.min(this.arenaMaxX() - 24, x));
+        spots.push(x);
+      }
+      b.bloom = { spots, t: 0, fired: 0 };
+      this.playSfx('sfx_boss_tell', 0.46);
+      this.setMessage('獄火華：火柱會一根一根噴上來，跟著節奏換位置，別站在同一點。');
+    }
+
+    updateBloom(dt) {
+      const bl = this.boss.bloom;
+      if (!bl) return;
+      bl.t += dt;
+      while (bl.fired < bl.spots.length && bl.t >= 0.26 + bl.fired * 0.24) {
+        const bx = bl.spots[bl.fired];
+        bl.fired += 1;
+        this.spawnBurst(bx, FLOOR - 30, 0xffd27a, 18);
+        this.spawnBurst(bx, FLOOR - 76, 0xff5a1e, 12);
+        const col = this.add.rectangle(bx, FLOOR - 130, 46, 260, 0xff6a2a, 0.5).setDepth(24);
+        this.tweens.add({ targets: col, alpha: 0, scaleX: 0.35, duration: 380,
+          onComplete: () => col.destroy() });
+        if (Math.abs(this.player.x - bx) < 46 && this.playerState.invuln <= 0) {
+          this.playerDamage('獄火華', 15);
+        }
+      }
+      if (bl.fired >= bl.spots.length && bl.t > 2.4) this.boss.bloom = null;
+    }
+
     castDash() {
       const b = this.boss;
       // 朝玩家那一侧冲，冲之前先定好方向（这样玩家能靠走位骗反方向）
@@ -4075,6 +4204,39 @@
             g.lineStyle(4, 0xff8a3a, 0.9).lineBetween(this.bossSprite.x, FLOOR - 96, this.bossSprite.x + dir * 250, FLOOR - 96);
             g.lineStyle(2, 0xfff0c8, 0.7).lineBetween(this.bossSprite.x, FLOOR - 40, this.bossSprite.x + dir * 250, FLOOR - 40);
             g.lineStyle(3, 0xffd27a, 0.9).strokeCircle(this.player.x, FLOOR - 3, 42);
+          } else if (move === 'tide') {
+            // 冥河之潮：貼地長條 + 倒計時環，答案就是「跳」
+            const dir = this.boss.facing;
+            const y0 = FLOOR - 34;
+            const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().tide.tell * this.phaseSpeed())));
+            g.fillStyle(0x2ea8ff, 0.10 + k * 0.16).fillRect(0, y0, WIDTH, 34);
+            g.lineStyle(4, 0x9fe0ff, 0.9).lineBetween(0, y0, WIDTH, y0);
+            g.lineStyle(3, 0xffffff, 0.7).lineBetween(this.bossSprite.x, y0, this.bossSprite.x + dir * 120, y0);
+            g.lineStyle(3, 0x9fe0ff, 0.85).strokeCircle(this.bossSprite.x, FLOOR - 60, 40);
+          } else if (move === 'gaze') {
+            // 亡魂凝視：準星追著玩家，鎖定後往兩側走
+            const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().gaze.tell * this.phaseSpeed())));
+            g.fillStyle(0xb07aff, 0.10 + k * 0.14).fillRect(this.player.x - 46, 0, 92, FLOOR);
+            g.lineStyle(2 + k * 2, 0xd8b4ff, 0.9).lineBetween(this.player.x - 46, 0, this.player.x - 46, FLOOR);
+            g.lineBetween(this.player.x + 46, 0, this.player.x + 46, FLOOR);
+            this.drawCountdown(g, this.player.x, FLOOR - 5, 46, k, '#d8b4ff', 0x6b3fa0);
+          } else if (move === 'shock') {
+            // 焚天震盪：近身紅圈收縮，代表「會被彈飛」
+            const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().shock.tell * this.phaseSpeed())));
+            const rr = 160 - k * 26;
+            g.fillStyle(0xff4d14, 0.10 + k * 0.16).fillCircle(this.bossSprite.x, FLOOR - 40, rr);
+            g.lineStyle(5, 0xff8a3a, 0.92).strokeCircle(this.bossSprite.x, FLOOR - 40, rr);
+            this.drawCountdown(g, this.bossSprite.x, FLOOR - 5, 60, k, '#ffd9a0', 0xff4d14);
+          } else if (move === 'bloom') {
+            // 獄火華：地面浮現五個落點，依序噴發
+            const k = Math.max(0, Math.min(1, 1 - this.boss.timer / Math.max(0.01, this.bossMoves().bloom.tell * this.phaseSpeed())));
+            const base = this.player.x;
+            for (let i = 0; i < 5; i += 1) {
+              const bx = Math.max(64, Math.min(this.arenaMaxX() - 24, base + (i - 2) * 128));
+              g.fillStyle(0xff4d14, 0.10 + k * 0.16).fillCircle(bx, FLOOR - 5, 46);
+              g.lineStyle(4, 0xff8a3a, 0.85).strokeCircle(bx, FLOOR - 5, 46);
+            }
+            this.drawCountdown(g, base, FLOOR - 5, 170, k, '#ffd9a0', 0xff4d14);
           } else if (move === 'dash') {
             // 冲刺预警：贴地的一条长带，明确「它要从哪边冲过来」
             const dir = this.boss.facing;
