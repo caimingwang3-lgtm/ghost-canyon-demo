@@ -1,0 +1,1364 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cathedral Sprint · 月下疾走（可玩版）</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23140d1f'/%3E%3Ccircle cx='35' cy='30' r='16' fill='%23d8d4e0'/%3E%3Ccircle cx='42' cy='26' r='14' fill='%23140d1f'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#1a1024">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="月下疾走">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+  html,body{ margin:0; padding:0; width:100%; height:100%; background:#000; overflow:hidden; }
+  #screen{ display:block; width:100vw; height:100vh;
+           image-rendering:pixelated; image-rendering:crisp-edges; background:#000; }
+  #gate{ position:fixed; inset:0; z-index:20; display:flex; align-items:center;
+         justify-content:center; cursor:pointer; transition:opacity 1.2s ease;
+         background:radial-gradient(ellipse at 50% 42%, rgba(28,16,44,.86), rgba(3,2,8,.97)); }
+  #gate.hide{ opacity:0; pointer-events:none; }
+  .gate-inner{ text-align:center; font-family:Georgia,'Times New Roman',serif;
+              padding:0 24px; user-select:none; }
+  .gate-cross{ font-size:22px; color:#8a3a46; letter-spacing:.5em; margin-bottom:14px;
+              text-shadow:0 0 14px rgba(150,40,60,.8); }
+  .gate-title{ font-size:34px; font-weight:bold; letter-spacing:.30em; color:#ded8e4;
+              text-shadow:0 0 14px rgba(120,36,56,.9), 0 2px 0 #000; padding-left:.30em; }
+  .gate-sub{ margin-top:12px; font-size:15px; letter-spacing:.62em; color:#9a8ea6; padding-left:.62em; }
+  .gate-hint{ margin-top:40px; font-size:13px; letter-spacing:.22em; color:#c07682;
+             padding-left:.22em; animation:gpulse 1.9s ease-in-out infinite; }
+  @keyframes gpulse{ 0%,100%{opacity:.4} 50%{opacity:1} }
+  /* ===== HUD ===== */
+  #hud{ position:fixed; inset:0; z-index:10; pointer-events:none;
+        font-family:'Courier New',Consolas,monospace; }
+  .hud-top{ position:absolute; top:14px; left:18px; color:#d2c8e0;
+        text-shadow:0 2px 0 #000, 0 0 10px rgba(120,60,120,.5); }
+  .hud-dist{ font-size:32px; font-weight:bold; letter-spacing:2px; line-height:1; }
+  .hud-dist small{ font-size:14px; color:#9a8ea6; letter-spacing:2px; }
+  .hud-best{ margin-top:6px; font-size:13px; letter-spacing:2px; color:#cbb26a; }
+  .hud-right{ position:absolute; top:16px; right:18px; text-align:right; }
+  .dash-wrap{ display:flex; align-items:center; justify-content:flex-end; gap:8px;
+        color:#9a8ea6; font-size:12px; letter-spacing:2px; }
+  .dash-icon{ width:48px; height:13px; border:2px solid #4a4258; background:#15101f;
+        position:relative; overflow:hidden; }
+  .dash-fill{ position:absolute; left:0; top:0; bottom:0; width:100%; background:#3a3350; }
+  .dash-wrap.ready .dash-fill{ background:linear-gradient(#f0d272,#b08a2a);
+        box-shadow:0 0 10px rgba(232,194,74,.85); }
+  .hud-hint{ position:absolute; bottom:15px; left:0; right:0; text-align:center;
+        font-size:13px; letter-spacing:1px; color:#b6a8c8; text-shadow:0 2px 0 #000;
+        transition:opacity .5s; padding:0 10px; }
+  .hud-hint b{ color:#e8c24a; font-weight:normal; }
+  /* ===== 死亡面板 ===== */
+  #over{ position:fixed; inset:0; z-index:21; display:none; align-items:center;
+        justify-content:center; flex-direction:column; cursor:pointer; user-select:none;
+        background:radial-gradient(ellipse at 50% 45%, rgba(46,8,16,.74), rgba(4,2,6,.94));
+        font-family:Georgia,'Times New Roman',serif; text-align:center; }
+  #over.show{ display:flex; }
+  .over-cross{ color:#8a3a46; letter-spacing:.5em; font-size:20px;
+        text-shadow:0 0 14px rgba(150,40,60,.8); }
+  .over-title{ font-size:42px; font-weight:bold; letter-spacing:.28em; color:#e6d6de;
+        margin:14px 0 6px; padding-left:.28em;
+        text-shadow:0 0 20px rgba(150,30,50,.95), 0 2px 0 #000; }
+  .over-sub{ font-size:13px; letter-spacing:.5em; color:#9a6a72; margin-bottom:26px; padding-left:.5em; }
+  .over-stat{ font-family:'Courier New',monospace; color:#d8cee4; margin:5px 0;
+        letter-spacing:2px; font-size:15px; }
+  .over-stat .big{ font-size:36px; color:#f2e8f2; font-weight:bold; }
+  .over-stat.best{ color:#e8c24a; }
+  .over-hint{ margin-top:30px; font-size:14px; letter-spacing:.22em; color:#d08a94;
+        animation:gpulse 1.6s ease-in-out infinite; }
+  /* ===== 触屏冲刺按钮 ===== */
+  #btnDash{ position:fixed; right:22px; bottom:22px; z-index:15; width:86px; height:86px;
+        border-radius:50%; border:2px solid #6a5e84; background:rgba(30,20,46,.45);
+        color:#cfc0e0; font-family:Georgia,serif; font-size:14px; letter-spacing:1px;
+        display:none; align-items:center; justify-content:center; pointer-events:auto;
+        touch-action:none; -webkit-user-select:none; user-select:none; }
+  #btnDash.ready{ border-color:#e8c24a; color:#ffe9a8; box-shadow:0 0 16px rgba(232,194,74,.5); }
+  @media (pointer:coarse){ #btnDash{ display:flex; } }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="hud">
+  <div class="hud-top">
+    <div class="hud-dist"><span id="dist">0</span><small> m</small></div>
+    <div class="hud-best">最高 <span id="best">0</span> m</div>
+  </div>
+  <div class="hud-right">
+    <div class="dash-wrap" id="dashWrap"><span>冲刺</span>
+      <div class="dash-icon"><div class="dash-fill" id="dashFill"></div></div>
+    </div>
+  </div>
+  <div class="hud-hint" id="hint"><b>↑ / 空格</b> 跳跃·二段跳 &nbsp;&nbsp; <b>↓</b> 滑铲·下压 &nbsp;&nbsp; <b>Shift</b> 冲刺碎障</div>
+</div>
+<button id="btnDash">冲刺</button>
+<div id="over" role="button" tabindex="0" aria-label="重新开始">
+  <div class="over-cross">† &nbsp; † &nbsp; †</div>
+  <div class="over-title">REQUIEM</div>
+  <div class="over-sub">安 魂 曲</div>
+  <div class="over-stat">奔逃 <span class="big" id="overDist">0</span> m</div>
+  <div class="over-stat best">最高 <span id="overBest">0</span> m <span id="newRecord" style="display:none">新纪录</span></div>
+  <div class="over-hint">按 R / 空格 · 或点击 再次奔逃</div>
+</div>
+<div id="gate" role="button" tabindex="0" aria-label="开始游戏">
+  <div class="gate-inner">
+    <div class="gate-cross">† &nbsp; † &nbsp; †</div>
+    <div class="gate-title">CATHEDRAL SPRINT</div>
+    <div class="gate-sub">月 下 疾 走</div>
+    <div class="gate-hint">点 击 / 按 任 意 键 · 开 始 奔 逃</div>
+  </div>
+</div>
+<script>
+"use strict";
+/* ============================================================
+   Cathedral Sprint · 月下疾走
+   哥特中世纪像素自动躲避演示（原生 JS + Canvas 2D）
+   逻辑分辨率 160x90，单文件，无外部资源
+   ============================================================ */
+
+/* ---------- 哥特固定调色板（约 32 色） ---------- */
+var PAL = {
+  black:'#05040a',
+  bg0:'#05040a', bg1:'#0a0814', bg2:'#100c20', bg3:'#18122c',
+  bg4:'#201638', bg5:'#2a1c46', bg6:'#342258',
+  moon:'#ece8da', moonD:'#b6b2a4', moonSh:'#8e8a80',
+  skinHi:'#f4ece6', skinMid:'#e4d4cc', skinDk:'#b0948c',
+  eye:'#5a6cb0', eyeHi:'#aab4e0', eyeDk:'#26305c', lip:'#a85a64',
+  blush:'#d89aa2', eyeWhite:'#f4f2f4',
+  hairHi:'#dadce2', hairMid:'#aab0ba', hairDk:'#6a6e7c',
+  cloth:'#2a2632', clothHi:'#4c4660', clothDk:'#12101a',
+  boot:'#1a1822', bootHi:'#3c3848',
+  stone:'#484452', stoneHi:'#625e70', stoneDk:'#262430',
+  tile:'#564648', tileHi:'#6e5a58', tileDk:'#2e2428',
+  moss:'#4d5c3a',
+  garg:'#5e5a68', gargHi:'#807c8c', gargDk:'#302e3a', gargEye:'#d84a3a',
+  fire:'#ff7a2c', fireHi:'#ffd24a', fireD:'#a03414',
+  core:'#fff4dc', gold:'#e8c24a', goldD:'#8a6a24',
+  blood:'#c84444', bloodD:'#6e2024',
+  glassG:'#54a06a', glassB:'#5a78c8',
+  feather:'#3a3448', featherHi:'#6a5e84',
+  star:'#c4c8e4', starD:'#5a5e84',
+  cat:'#0c0a16', cat2:'#141024'
+};
+/* 冲刺残影：7 色哥特暗彩（亮色 / 统一暗色） */
+var AFTER_L=['#6a5e84','#4a5a8a','#46664f','#8a4a52','#8a7a4a','#565264','#3a3448'];
+
+/* ---------- 逻辑分辨率 / 画布 ---------- */
+var LW=160, LH=90;
+var SPAWN_X=190;   /* 障碍生成点：提前进入视野，给玩家更多反应时间 */
+var logic=document.createElement('canvas');
+logic.width=LW; logic.height=LH;
+var g=logic.getContext('2d'); g.imageSmoothingEnabled=false;
+
+/* 角色缓冲 16 x 28（精细哥特萝莉） */
+var CHAR_W=16, CHAR_H=28;
+var charBuf=document.createElement('canvas');
+charBuf.width=CHAR_W; charBuf.height=CHAR_H;
+var cg=charBuf.getContext('2d'); cg.imageSmoothingEnabled=false;
+
+var screen=document.getElementById('screen');
+var sx=screen.getContext('2d'); sx.imageSmoothingEnabled=false;
+var scale=1;
+function resize(){
+  screen.width=window.innerWidth; screen.height=window.innerHeight;
+  var s=Math.floor(Math.min(screen.width/LW, screen.height/LH));
+  scale=s<1?1:s; sx.imageSmoothingEnabled=false;
+}
+window.addEventListener('resize',resize); resize();
+
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+var DITHER=[[0,2,1,3],[1,3,0,2],[2,0,3,1],[3,1,2,0]];
+var SHAKE_PAT=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1],
+               [1,0],[0,1],[-1,0],[0,-1],[1,1],[-1,-1],[0,0],[0,0]];
+
+/* ============================================================
+   可玩游戏：READY（开场门）→ PLAY → DEAD（R / 点击重开）
+   ============================================================ */
+var FLOOR=68, CHAR_X=50;
+var GRAV=2300, JUMP_V=362, DOUBLE_V=352, MAX_UP=-42;
+var DASH_TIME=0.42, DASH_CD=1.7, SLIDE_TIME=0.85;
+
+var mode='READY';
+var time=0, scrollDist=0, worldV=108, baseV=108;
+var hitstop=0, slowmo=0;
+var state='RUN';                 /* 音乐/视觉情绪：RUN / BOOST / WARP / DEAD */
+var camLift=0, shakeT=-1, shakeDur=0;
+var charScreenX=CHAR_X, WY=0;
+var nearSide=null, nearT=0;
+var deathFlash=0, deathT=0, deathCause='';
+var warpPhase=-1;
+var gap={active:false,x1:0,x2:0};
+
+var player={py:0,vy:0,onGround:true,jumps:0,slideT:0,dashT:0,dashCD:0,
+            stepAcc:0,landAcc:0};
+var pose={cyOff:0,dw:CHAR_W,dh:CHAR_H,lean:0,legHold:false,eyeFwd:true,air:false};
+
+var bonusM=0, bonusFlash=0;
+var best=0;
+try{ best=parseInt(localStorage.getItem('cathedralSprintBest')||'0',10)||0; }catch(e){ best=0; }
+
+var nextX=210, boostTimer=22, reactT=1.5, rngState=123456789;
+function rng(){ rngState=(rngState*1103515245+12345)&0x7fffffff; return rngState/0x7fffffff; }
+
+/* ---------- 障碍池（滴水嘴兽 / 火焰弹） ---------- */
+var MAX_F=8, foes=[];
+for(var fi=0;fi<MAX_F;fi++)
+  foes.push({active:false,kind:0,x:0,y:0,vx:0,vy:0,size:1,rot:0,boom:false});
+function spawnFoe(kind,x,y,vx,vy,size,boom){
+  for(var i=0;i<MAX_F;i++){ var m=foes[i];
+    if(!m.active){ m.active=true; m.kind=kind; m.x=x; m.y=y; m.vx=vx; m.vy=vy;
+      m.size=size; m.rot=i%4; m.boom=!!boom; return m; } }
+  return null;
+}
+function clearFoes(){ for(var i=0;i<MAX_F;i++) foes[i].active=false; }
+
+/* ---------- 圣光门（随世界冲来、有水平宽度的光帘） ---------- */
+var beam={active:false,x:0,w:16,y:36,h:28,t:0,spawnT:0.32,passed:false,
+          kind:'low',edge:PAL.gold, edgeD:PAL.goldD};
+function clearBeam(){ beam.active=false; beam.t=0; beam.passed=false; }
+
+/* ============================================================
+   粒子池
+   kind: SPARK火星 / DUST屋脊洒落 / TAIL火尾 / SHARD碎石
+         / AFTER残影 / RING黑羽环 / FEATHER飞散黑羽
+   ============================================================ */
+var K_SPARK=0,K_DUST=1,K_TAIL=2,K_SHARD=3,K_AFTER=4,K_RING=5,K_FEATHER=6;
+var MAX_P=240, P=[];
+for(var pi=0;pi<MAX_P;pi++)
+  P.push({active:false,kind:0,x:0,y:0,vx:0,vy:0,life:0,max:0,hue:0,grav:0,size:1,rot:0});
+function emit(kind,x,y,vx,vy,life,hue,grav,size){
+  for(var i=0;i<MAX_P;i++){ var p=P[i];
+    if(!p.active){ p.active=true; p.kind=kind; p.x=x; p.y=y; p.vx=vx; p.vy=vy;
+      p.life=life; p.max=life; p.hue=hue||0; p.grav=grav||0; p.size=size||1;
+      p.rot=(i*7)%4; return p; } }
+  return null;
+}
+function clearParticles(){ for(var i=0;i<MAX_P;i++) P[i].active=false; }
+
+function sparkColor(t){ return t>0.72?PAL.core:t>0.48?PAL.fireHi:t>0.22?PAL.fire:PAL.fireD; }
+function tailColor(t){ return t>0.6?PAL.fire:t>0.32?PAL.fireD:PAL.gargDk; }
+function shardColor(t,hue){
+  if(hue===1) return t>0.5?PAL.gargHi:PAL.garg;
+  if(hue===2) return t>0.5?PAL.stoneHi:PAL.stoneDk;
+  return t>0.6?PAL.stone:t>0.3?PAL.stoneDk:PAL.gargDk;
+}
+function dustColor(t,hue){
+  if(hue===0) return t>0.5?PAL.featherHi:PAL.feather;
+  if(hue===1) return t>0.5?PAL.moss:PAL.gargDk;
+  return t>0.5?PAL.stone:PAL.stoneDk;
+}
+
+/* ---------- 背景：星 / 月 / 教堂剪影 / 乌鸦 ---------- */
+var stars=[];
+(function(){
+  var s=999;
+  function nr(){ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; }
+  for(var i=0;i<40;i++) stars.push({x:Math.floor(nr()*LW),y:Math.floor(nr()*52),
+    ph:Math.floor(nr()*60)});
+})();
+/* 教堂尖塔剪影轮廓（x 起点, 宽, 塔高, 有无彩窗），世界单位 */
+var spires=[
+  {x:0,  w:26,h:34,win:true},{x:30,w:18,h:24,win:false},
+  {x:52,w:30,h:40,win:true},{x:86,w:20,h:28,win:false},
+  {x:110,w:28,h:36,win:true},{x:142,w:22,h:26,win:false}
+];
+/* 乌鸦 */
+var crows=[];
+(function(){
+  var s=4321;
+  function nr(){ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; }
+  for(var i=0;i<3;i++) crows.push({x:Math.floor(nr()*LW),y:10+Math.floor(nr()*18),
+    sp:0.5+nr()*0.4, ph:nr()*6});
+})();
+
+/* ============================================================
+   哥特少女角色缓冲 12x17
+   色键:
+   1 skinMid 2 skinHi 3 skinDk 4 eye 5 eyeHi 6 hairMid 7 hairHi
+   8 hairDk 9 cloth 10 clothHi 11 clothDk 12 boot 13 bootHi 14 lip
+   ============================================================ */
+var CMAP={1:PAL.skinMid,2:PAL.skinHi,3:PAL.skinDk,4:PAL.eye,5:PAL.eyeHi,
+  6:PAL.hairMid,7:PAL.hairHi,8:PAL.hairDk,9:PAL.cloth,10:PAL.clothHi,
+  11:PAL.clothDk,12:PAL.boot,13:PAL.bootHi,14:PAL.lip,15:PAL.eyeDk,
+  16:PAL.blush,17:PAL.eyeWhite,18:PAL.goldD};
+
+function buildChar(legFrame,eyeFwd){
+  var img=cg.createImageData(CHAR_W,CHAR_H), d=img.data;
+  function set(x,y,v){
+    if(v===0||x<0||x>=CHAR_W||y<0||y>=CHAR_H)return;
+    var col=CMAP[v]; if(!col)return;
+    var idx=(y*CHAR_W+x)*4;
+    d[idx]=parseInt(col.slice(1,3),16);
+    d[idx+1]=parseInt(col.slice(3,5),16);
+    d[idx+2]=parseInt(col.slice(5,7),16);
+    d[idx+3]=255;
+  }
+  function rect(x0,y0,x1,y1,v){ for(var yy=y0;yy<=y1;yy++) for(var xx=x0;xx<=x1;xx++) set(xx,yy,v); }
+
+  /* ===== 银灰蘑菇波波头（圆顶 + 齐刘海 + 两侧内卷） ===== */
+  rect(5,0,10,0,7);
+  rect(4,1,11,1,6); set(5,1,7); set(8,1,7); set(10,1,7);
+  rect(3,2,12,2,6); set(4,2,7); set(7,2,7); set(10,2,7); set(3,2,8); set(12,2,8);
+  rect(2,3,13,3,6); set(3,3,7); set(6,3,7); set(9,3,7); set(12,3,7); set(2,3,8); set(13,3,8);
+  rect(2,4,13,4,6); set(3,4,8); set(6,4,8); set(9,4,8); set(12,4,8);
+  set(4,4,7); set(7,4,7); set(10,4,7);
+  var bang=[8,6,8,6,8,6,8,6,8,6,8,8];      // 行5 参差刘海梢（兼上眼睑）
+  for(var bx2=2;bx2<=13;bx2++) set(bx2,5,bang[bx2-2]);
+  /* 两侧垂发：行6-8 包脸，行9-10 内收，行11-12 发尾向内卷 */
+  rect(1,6,2,8,8); rect(13,6,14,8,8);
+  set(2,9,8); set(13,9,8); set(2,10,8); set(13,10,8);
+  set(3,11,8); set(4,11,8); set(11,11,8); set(12,11,8);
+  set(4,12,8); set(11,12,8);
+
+  /* ===== 苍白小脸 ===== */
+  rect(3,6,12,7,2);                        // 眼区亮肤
+  rect(3,8,12,10,1);                      // 脸颊
+  rect(5,11,10,11,1);                     // 下巴
+  /* 下垂大眼（3宽×2高），蓝灰虹膜 + 深瞳 + 高光 */
+  if(eyeFwd){
+    set(4,6,4);  set(5,6,17); set(6,6,15);
+    set(4,7,4);  set(5,7,4);  set(6,7,15);
+    set(9,6,4);  set(10,6,17);set(11,6,15);
+    set(9,7,4);  set(10,7,4); set(11,7,15);
+  } else {
+    set(4,6,17); set(5,6,4);  set(6,6,15);
+    set(4,7,4);  set(5,7,15); set(6,7,4);
+    set(9,6,15); set(10,6,4); set(11,6,17);
+    set(9,7,4);  set(10,7,15);set(11,7,4);
+  }
+  set(4,8,16); set(11,8,16);              // 腮红
+  set(7,8,3);  set(8,8,3);                // 鼻影
+  set(7,9,3);                             // 小鼻
+  set(7,10,14); set(8,10,14);            // 小嘴
+  set(5,11,3); set(10,11,3);             // 下颌阴影
+
+  /* ===== 黑色高领 ===== */
+  rect(5,12,10,12,11);
+  rect(5,13,10,13,9); set(6,13,10); set(9,13,10); set(5,13,11); set(10,13,11);
+
+  /* ===== 层叠荷叶边蓬裙（钟形，行14-22） ===== */
+  rect(3,14,12,14,9); set(4,14,10);set(7,14,10);set(10,14,10); set(5,14,11);set(8,14,11);set(11,14,11);
+  rect(2,15,13,15,9); set(3,15,10);set(6,15,10);set(9,15,10);set(12,15,10); set(4,15,11);set(7,15,11);set(10,15,11);set(13,15,11);
+  rect(1,16,14,16,9); set(2,16,10);set(5,16,10);set(8,16,10);set(11,16,10);set(13,16,10); set(3,16,11);set(6,16,11);set(9,16,11);set(12,16,11);
+  rect(1,17,14,17,9); set(1,17,10);set(4,17,10);set(7,17,10);set(10,17,10);set(13,17,10); set(2,17,11);set(5,17,11);set(8,17,11);set(11,17,11);set(14,17,11);
+  rect(1,18,14,18,9); set(1,18,10);set(4,18,10);set(7,18,10);set(10,18,10);set(13,18,10); set(2,18,11);set(5,18,11);set(8,18,11);set(11,18,11);set(14,18,11);
+  rect(1,19,14,19,9); set(2,19,10);set(5,19,10);set(8,19,10);set(11,19,10);set(13,19,10); set(3,19,11);set(6,19,11);set(9,19,11);set(12,19,11);
+  rect(2,20,13,20,9); set(3,20,10);set(6,20,10);set(9,20,10);set(12,20,10); set(4,20,11);set(7,20,11);set(10,20,11);
+  rect(3,21,12,21,9); set(4,21,10);set(7,21,10);set(10,21,10); set(5,21,11);set(8,21,11);set(11,21,11);
+  set(4,22,11); set(5,22,10); set(7,22,10); set(8,22,10); set(10,22,10); set(11,22,11);
+
+  /* ===== 苍白小手（蓬裙两侧自然下垂，行16-19） ===== */
+  set(0,16,2); set(15,16,2);
+  set(0,17,2); set(15,17,2);
+  set(0,18,1); set(15,18,1);
+  set(0,19,3); set(15,19,3);
+
+  /* ===== 渔网袜细腿 + 系带短靴（左腿列6 / 右腿列9） ===== */
+  var leftUp=(legFrame===2)||(legFrame===4);
+  var rightUp=(legFrame===0)||(legFrame===4);
+  function leg(col,up,left){
+    var n=legFrame===4?2:(up?1:0);             // 奔跑抬腿上移1，蜷缩上移2
+    set(col,22-n,12); set(col,23-n,12); set(col,24-n,12);
+    set(col,(left?23:24)-n,13);               // 菱形网纹高光（左右错开）
+    if(left){
+      set(col-1,25-n,13); set(col,25-n,12);
+      set(col-1,26-n,12); set(col,26-n,12); set(col,26-n,13);
+      set(col-1,27-n,11); set(col,27-n,11);
+      if(n===0) set(col-2,27,12);             // 靴底微外八
+    } else {
+      set(col,25-n,12); set(col+1,25-n,13);
+      set(col,26-n,12); set(col,26-n,13); set(col+1,26-n,12);
+      set(col,27-n,11); set(col+1,27-n,11);
+      if(n===0) set(col+2,27,12);
+    }
+  }
+  leg(6,leftUp,true); leg(9,rightUp,false);
+
+  cg.putImageData(img,0,0);
+}
+
+/* 残影：先渲染一次角色，读一次像素，再生成 7 色哥特暗彩剪影 */
+var afterBuf=[];
+buildChar(1,false);
+var srcImg=cg.getImageData(0,0,CHAR_W,CHAR_H), sd=srcImg.data;
+for(var ah=0;ah<7;ah++){
+  var cv=document.createElement('canvas');
+  cv.width=CHAR_W; cv.height=CHAR_H;
+  var ax=cv.getContext('2d'); ax.imageSmoothingEnabled=false;
+  var im=ax.createImageData(CHAR_W,CHAR_H), dd=im.data, hi=AFTER_L[ah];
+  var hr=parseInt(hi.slice(1,3),16), hg=parseInt(hi.slice(3,5),16),
+      hb=parseInt(hi.slice(5,7),16);
+  for(var q=0;q<CHAR_W*CHAR_H;q++){
+    var ai=q*4;
+    if(sd[ai+3]!==0){ dd[ai]=hr; dd[ai+1]=hg; dd[ai+2]=hb; dd[ai+3]=255; }
+  }
+  ax.putImageData(im,0,0);
+  afterBuf.push(cv);
+}
+
+/* ============================================================
+   玩家动作：跳跃 / 二段跳 / 滑铲 / 空中下压 / 冲刺
+   ============================================================ */
+function tryJump(){
+  if(mode!=='PLAY')return;
+  if(player.slideT>0)player.slideT=0;              /* 滑铲中起跳取消滑铲 */
+  if(player.onGround){
+    player.vy=-JUMP_V; player.onGround=false; player.jumps=1;
+    GameAudio.sfx('jump');
+  } else if(player.jumps<2){
+    player.vy=-DOUBLE_V; player.jumps=2;           /* 二段跳：黑羽绽开 */
+    GameAudio.sfx('flutter');
+    var rcx=CHAR_X+7, rcy=FLOOR+player.py-12;
+    emit(K_RING,rcx,rcy,0,0,0.36,0,0,1);
+    for(var f=0;f<10;f++){ var a=(f/10)*Math.PI*2, sp=18+(f%4)*10;
+      emit(K_FEATHER,rcx,rcy+2,Math.cos(a)*sp,Math.sin(a)*sp-6,0.7,f%2,8,f===0?2:1); }
+  }
+}
+function pressDown(){
+  if(mode!=='PLAY')return;
+  if(!player.onGround){ if(player.vy<420)player.vy=560; }       /* 空中下压 */
+  else if(player.slideT<=0){ player.slideT=SLIDE_TIME; GameAudio.sfx('slide'); }
+}
+function tryDash(){
+  if(mode!=='PLAY')return;
+  if(player.dashCD<=0&&player.dashT<=0&&player.onGround){
+    player.dashT=DASH_TIME; player.dashCD=DASH_CD;
+    GameAudio.sfx('dash'); startShake(4);
+  }
+}
+function updatePlayer(dt){
+  var p=player;
+  if(p.dashCD>0)p.dashCD-=dt;
+  if(p.dashT>0)p.dashT-=dt;
+  if(p.slideT>0)p.slideT-=dt;
+  if(!p.onGround){
+    p.vy+=GRAV*dt; p.py+=p.vy*dt;
+    if(p.py<MAX_UP)p.py=MAX_UP;
+    if(p.py>=0){ p.py=0; p.vy=0; p.onGround=true; p.jumps=0; landDust(); }
+  }
+  pose.cyOff=Math.round(p.py);
+  pose.air=!p.onGround; pose.eyeFwd=true; pose.legHold=false; pose.lean=0;
+  if(p.dashT>0){ pose.dw=17; pose.dh=23; pose.lean=1; }
+  else if(p.slideT>0){ pose.dw=20; pose.dh=15; pose.lean=1; pose.legHold=true; }
+  else if(!p.onGround){ pose.dw=16; pose.dh=23; pose.lean=0.25; pose.legHold=true; }
+  else { pose.dw=CHAR_W; pose.dh=CHAR_H; pose.lean=0; }
+  if(p.dashT>0){ p.stepAcc+=dt;                    /* 冲刺暗彩残影 */
+    if(p.stepAcc>=0.06){ p.stepAcc=0;
+      emit(K_AFTER,charScreenX,FLOOR-pose.dh+pose.cyOff,0,0,0.3,
+           Math.floor(time*16)%7,0,1); } }
+}
+function landDust(){
+  for(var k=-1;k<=1;k+=2){
+    emit(K_DUST,CHAR_X+4+k*4,FLOOR,k*26-worldV*0.3,-20,0.4,2,40,1);
+    emit(K_FEATHER,CHAR_X+4+k*3,FLOOR-2,k*18-worldV*0.2,-18,0.6,k>0?1:0,2,1);
+  }
+}
+
+/* ============================================================
+   程序化障碍生成
+   gargHigh 悬空石像(滑铲) / fireLow 地面火焰弹(跳)
+   beamHigh 高位圣光(滑铲或跳) / beamLow 低位圣光(二段跳)
+   gap 屋脊断裂(跳过) / gargBig 大石像(二段跳或冲刺撞碎)
+   ============================================================ */
+function startShake(d){ shakeT=0; shakeDur=d; }
+function pickHazard(){
+  var m=scrollDist/8, pool;
+  if(m<130)      pool=['gargHigh','fireLow'];
+  else if(m<280) pool=['gargHigh','fireLow','gap','beamHigh'];
+  else if(m<430) pool=['gargHigh','fireLow','gap','beamHigh','beamLow','gargBig'];
+  else           pool=['gargHigh','fireLow','gap','beamHigh','beamLow','gargBig','fireLow','gargHigh'];
+  return pool[Math.floor(rng()*pool.length)];
+}
+function spawnHazard(kind){
+  if(kind==='beamHigh'||kind==='beamLow'){ spawnGate(kind); return; }
+  if(kind==='gap'){
+    var w=9+Math.min(4,(scrollDist/8)/130)+rng()*2;   /* 窄缺口：保证单跳即可越过 */
+    gap.active=true; gap.x1=SPAWN_X; gap.x2=SPAWN_X+w; return;
+  }
+  var m=null;
+  if(kind==='gargHigh') m=spawnFoe(0,SPAWN_X,48,0,0,0,false);     /* 低垂石像横梁：滑铲 */
+  else if(kind==='fireLow') m=spawnFoe(1,SPAWN_X,62,0,0,1,false); /* 地面火焰弹：单跳 */
+  else m=spawnFoe(0,SPAWN_X,50,0,0,2,false);                      /* 落地巨石像：二段/冲刺 */
+  if(m)m.passed=false;
+}
+function spawnGate(kind){
+  var high=(kind==='beamHigh');
+  beam.active=true; beam.passed=false; beam.kind=high?'high':'low';
+  beam.x=SPAWN_X; beam.w=high?16:12; beam.t=0;
+  beam.y=high?49:34; beam.h=high?34:24;
+  beam.edge=high?PAL.blood:PAL.gold;
+  beam.edgeD=high?PAL.bloodD:PAL.goldD;
+  GameAudio.sfx('warn');
+}
+function spawnLogic(dt){
+  if(state==='BOOST'||state==='WARP')return;
+  nextX-=worldV*dt;
+  if(nextX<=SPAWN_X){
+    var kind=pickHazard();
+    spawnHazard(kind);
+    var spacing=worldV*reactT+rng()*worldV*0.55;
+    if(kind==='beamHigh'||kind==='beamLow')spacing+=worldV*0.7;
+    if(kind==='gap')spacing+=55;
+    nextX=SPAWN_X+spacing;
+  }
+}
+
+/* ============================================================
+   碰撞（碰撞盒比视觉略小，留宽容手感）
+   ============================================================ */
+function charBox(){
+  var footY=FLOOR+player.py;
+  if(player.slideT>0)  return {l:CHAR_X+2,r:CHAR_X+15,t:footY-12,b:footY};
+  if(player.dashT>0)   return {l:CHAR_X+3,r:CHAR_X+13,t:footY-22,b:footY};
+  if(!player.onGround) return {l:CHAR_X+4,r:CHAR_X+11,t:footY-24,b:footY};
+  return {l:CHAR_X+3,r:CHAR_X+12,t:footY-26,b:footY};
+}
+function overlap(a,b){ return a.l<b.r && a.r>b.l && a.t<b.b && a.b>b.t; }
+function nearMiss(side){ nearSide=side; nearT=0.24; startShake(5); GameAudio.sfx('near'); }
+function checkHazards(){
+  var cb=charBox();
+  for(var i=0;i<MAX_F;i++){
+    var m=foes[i]; if(!m.active)continue;
+    var fb, side, edge;
+    if(m.kind===0&&m.size===0){ fb={l:m.x-5,r:m.x+7,t:14,b:52}; side='top'; edge=5; }  /* 低垂横梁 */
+    else if(m.kind===1){ fb={l:m.x-3,r:m.x+4,t:56,b:67}; side='bottom'; edge=3; }      /* 地面火 */
+    else { fb={l:m.x-7,r:m.x+8,t:40,b:60}; side='left'; edge=7; }                      /* 巨石像 */
+    if(overlap(cb,fb)){
+      var crushable=(m.kind===1)||(m.size===2);                   /* 冲刺只碎地面实体 */
+      if(player.dashT>0&&crushable){
+        m.active=false; explode({x:m.x,y:m.y,size:m.size}); addBonus(25); continue;
+      }
+      die(m.kind===1?'fire':'stone'); return;
+    }
+    if(!m.passed && m.x-edge<cb.l){
+      m.passed=true;
+      var cleared=(m.kind===0&&m.size===0)?(player.slideT>0):(!player.onGround);
+      if(cleared)nearMiss(side);
+    }
+  }
+  if(beam.active){
+    var gb=beam.kind==='high'?{l:beam.x,r:beam.x+beam.w,t:18,b:52}
+                             :{l:beam.x,r:beam.x+beam.w,t:34,b:58};
+    if(overlap(cb,gb)){ die('beam'); return; }
+    if(!beam.passed && beam.x+beam.w<cb.l){
+      beam.passed=true;
+      var ok=beam.kind==='high'?(player.slideT>0):(!player.onGround&&player.jumps>=2);
+      if(ok)nearMiss(beam.kind==='high'?'top':'bottom');
+    }
+  }
+  if(gap.active){
+    var cxm=CHAR_X+7;
+    if(cxm>gap.x1+2&&cxm<gap.x2-2&&player.py>-3){ die('gap'); return; }
+  }
+}
+/* 世界层推进：光束计时 / 缺口与实体左移 / 拖尾粒子 */
+function moveWorld(dt){
+  if(beam.active){
+    beam.t+=dt; beam.x-=worldV*dt;
+    if(beam.x<-beam.w-6)beam.active=false;
+  }
+  if(gap.active){
+    gap.x1-=worldV*dt; gap.x2-=worldV*dt;
+    if(gap.x2<-10)gap.active=false;
+  }
+  for(var i=0;i<MAX_F;i++){
+    var m=foes[i]; if(!m.active)continue;
+    m.x-=worldV*dt;
+    if(m.kind===1&&(Math.floor(time*60)+i)%2===0){
+      emit(K_TAIL,m.x+(m.size===2?3:1),m.y+(m.size===2?3:1),
+           -worldV*0.25-10,8,0.4,0,0,m.size===2?2:1);
+    } else if(m.kind===0&&(Math.floor(time*40)+i)%3===0){
+      emit(K_DUST,m.x,m.y+m.size*2,-worldV*0.2,6,0.5,0,4,1);
+    }
+    if(m.x<-24)m.active=false;
+  }
+}
+
+/* ============================================================
+   死亡 / 重开 / 计分 / HUD
+   ============================================================ */
+function addBonus(n){ bonusM+=n; bonusFlash=0.5; }
+function totalM(){ return Math.floor(scrollDist/8)+bonusM; }
+function die(cause){
+  if(mode!=='PLAY')return;
+  mode='DEAD'; deathT=0; deathCause=cause; deathFlash=0.5; state='DEAD';
+  hitstop=5; slowmo=0.4; startShake(12); GameAudio.sfx('death');
+  var cx=CHAR_X+7, cy=FLOOR+player.py-12;
+  if(cause!=='gap'){
+    for(var k=0;k<14;k++){ var a=(k/14)*Math.PI*2, sp=16+(k%4)*12;
+      emit(K_FEATHER,cx,cy,Math.cos(a)*sp,Math.sin(a)*sp-8,0.9,k%2,70,k===0?2:1); }
+    for(var s=0;s<8;s++) emit(K_SPARK,cx,cy,(s%5)*16-32,-16-(s%3)*12,0.5,0,40,1);
+  }
+  var t=totalM(), isNew=false;
+  if(t>best){ best=t; isNew=true;
+    try{ localStorage.setItem('cathedralSprintBest',String(best)); }catch(e){} }
+  document.getElementById('newRecord').style.display=isNew?'inline':'none';
+  setTimeout(showOver,850);
+}
+function showOver(){
+  if(mode!=='DEAD')return;
+  document.getElementById('overDist').textContent=totalM();
+  document.getElementById('overBest').textContent=best;
+  document.getElementById('over').classList.add('show');
+}
+function resetGame(){
+  mode='PLAY'; state='RUN';
+  player.py=0;player.vy=0;player.onGround=true;player.jumps=0;
+  player.slideT=0;player.dashT=0;player.dashCD=0;player.stepAcc=0;player.landAcc=0;
+  scrollDist=0; bonusM=0; bonusFlash=0; baseV=108; worldV=108;
+  nextX=210; boostTimer=22; reactT=1.5; rngState=(Date.now()&0x7fffffff)||98765;
+  camLift=0; shakeT=-1; nearSide=null; nearT=0; deathFlash=0; deathT=0;
+  deathCause=''; warpPhase=-1; charScreenX=CHAR_X; slowmo=0; hitstop=0;
+  clearFoes(); clearBeam(); clearParticles(); gap.active=false;
+  document.getElementById('over').classList.remove('show');
+  document.getElementById('newRecord').style.display='none';
+  GameAudio.start();
+}
+function updateHUD(){
+  document.getElementById('dist').textContent=(mode==='READY')?0:totalM();
+  document.getElementById('best').textContent=best;
+  var ready=player.dashCD<=0;
+  document.getElementById('dashWrap').classList.toggle('ready',ready);
+  document.getElementById('btnDash').classList.toggle('ready',ready);
+  document.getElementById('dashFill').style.width=
+    (ready?100:Math.round((1-player.dashCD/DASH_CD)*100))+'%';
+  var hint=document.getElementById('hint');
+  if(hint){ var hd=Math.max(0,1-(scrollDist/8)/150);
+    hint.style.opacity=mode==='READY'?1:(mode==='PLAY'?hd:0); }
+}
+
+/* ============================================================
+   更新
+   ============================================================ */
+var STEP=1/60;
+function shakeTick(dt){ if(shakeT>=0){ shakeT+=dt; if(shakeT>shakeDur/42)shakeT=-1; } }
+function update(dt){
+  time+=dt;
+
+  if(mode==='READY'){
+    worldV=lerp(worldV,108,dt*3);
+    scrollDist+=worldV*dt;
+    camLift=lerp(camLift,0,dt*4); WY=0;
+    ambientOnly(dt); footEffects(dt); updateParticles(dt);
+    shakeTick(dt); updateHUD();
+    return;
+  }
+
+  if(mode==='DEAD'){
+    deathT+=dt;
+    if(deathCause==='gap'){ player.vy+=GRAV*dt; player.py+=player.vy*dt;
+      pose.cyOff=Math.round(player.py); pose.air=true; }
+    worldV=lerp(worldV,0,dt*2.2);
+    scrollDist+=worldV*dt;
+    moveWorld(dt); ambientOnly(dt); updateParticles(dt);
+    camLift=lerp(camLift,0,dt*4);
+    if(deathFlash>0)deathFlash-=dt;
+    shakeTick(dt);
+    return;
+  }
+
+  /* ---- PLAY：难度随距离提升 ---- */
+  var meters=scrollDist/8;
+  baseV=108+Math.min(52,meters*0.24);
+  reactT=1.7-Math.min(0.45,meters/1200);
+  var target=baseV;
+
+  /* 周期彩窗加速浪潮：BOOST 清场提速 3s → WARP 玫瑰彩窗冲刺 */
+  if(warpPhase>=0){
+    warpPhase+=dt; state='WARP'; target=520;
+    if(warpPhase>1.0){ warpPhase=-1; boostTimer=24; nextX=220; state='RUN';
+      clearFoes(); clearBeam(); gap.active=false; }
+  } else if(boostTimer<=0){
+    warpPhase=0; state='WARP'; GameAudio.sfx('glass'); addBonus(100); startShake(8);
+  } else if(boostTimer<3.0){
+    if(state!=='BOOST'){ state='BOOST'; startShake(8);
+      for(var c=0;c<MAX_F;c++){ if(foes[c].active){ explode(foes[c]); foes[c].active=false; } }
+      clearBeam(); gap.active=false; nextX=240;
+    }
+    target=360;
+  } else state='RUN';
+
+  if(player.dashT>0)target=Math.max(target,baseV+135);
+  worldV=lerp(worldV,target,clamp(dt*5,0,1));
+  scrollDist+=worldV*dt;
+  boostTimer-=dt;
+
+  updatePlayer(dt);
+  spawnLogic(dt);
+  moveWorld(dt);
+  checkHazards();
+  if(mode!=='PLAY')return;             /* 本帧死亡：定格，余下等 DEAD 分支 */
+  ambientOnly(dt); footEffects(dt); updateParticles(dt);
+
+  var tl=player.py<0?(-player.py*0.25):0;
+  camLift=lerp(camLift,tl,clamp(dt*4.2,0,1));
+  var tx=CHAR_X-clamp((worldV-118)/260,0,1)*12;
+  charScreenX=Math.round(lerp(charScreenX,tx,clamp(dt*3,0,1)));
+  shakeTick(dt);
+  if(nearT>0){ nearT-=dt; if(nearT<=0)nearSide=null; }
+  if(bonusFlash>0)bonusFlash-=dt;
+  if(deathFlash>0)deathFlash-=dt;
+  if(slowmo>0)slowmo-=dt;
+  updateHUD();
+}
+function explode(m){
+  var n=m.size===2?26:12;
+  for(var i=0;i<n;i++){
+    var a=(i/n)*Math.PI*2, sp=20+(i%5)*12;
+    emit(K_SHARD,m.x+m.size*1.5,m.y+m.size*1.5,
+      Math.cos(a)*sp-worldV*0.3,Math.sin(a)*sp-10,
+      0.6+(i%3)*0.12,i%3===0?1:2,60,m.size===2?2:1);
+  }
+  for(var j=0;j<8;j++)
+    emit(K_SPARK,m.x+m.size,m.y+m.size,
+      -worldV*0.4+(j%3)*14-14,-20-(j%4)*10,0.4,0,40,1);
+  for(var k=0;k<8;k++)
+    emit(K_FEATHER,m.x+m.size,m.y+m.size-2,
+      (k%5)*12-24,-14-(k%3)*10,0.8,k%2,6,k===0?2:1);
+  startShake(10); GameAudio.sfx('boom',m.size);
+}
+var ridgeAcc=0, footAcc=0;
+function ambientOnly(dt){
+  ridgeAcc+=dt;
+  if(ridgeAcc>=0.05){
+    ridgeAcc=0;
+    var seed=Math.floor(time*20), rr=(seed*1103515245+12345)&0x7fffffff, px=rr%LW;
+    if(!(gap.active&&px>gap.x1&&px<gap.x2)){
+      var kind=rr%10, hue=kind<2?0:(kind<4?1:2);   /* 黑羽 / 苔尘 / 碎石 */
+      emit(K_DUST,px,82,-worldV*0.18,7+(rr%8),0.95,hue,6,1);
+    }
+  }
+}
+function footEffects(dt){
+  footAcc+=dt;
+  var footY=FLOOR+player.py, footX=charScreenX;
+  if(mode==='PLAY'&&player.onGround&&player.slideT>0&&footAcc>=0.04){
+    footAcc=0;
+    emit(K_DUST,footX,footY-1,-worldV*0.5-26,-8-(Math.floor(time*40)%2*10),0.4,2,30,1);
+    emit(K_FEATHER,footX+2,footY-2,-worldV*0.4,-18,0.6,0,4,1);
+  } else if(player.onGround&&player.dashT<=0&&footAcc>=0.09){
+    footAcc=0;
+    if(rng()<0.6)emit(K_DUST,footX,footY,-worldV*0.4-10,-10-(rng()*8),0.4,2,26,1);
+  }
+}
+function updateParticles(dt){
+  for(var i=0;i<MAX_P;i++){
+    var p=P[i]; if(!p.active)continue;
+    p.life-=dt;
+    if(p.life<=0){ p.active=false; continue; }
+    if(p.kind!==K_AFTER&&p.kind!==K_RING){
+      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=p.grav*dt;
+      if(p.kind===K_FEATHER) p.x+=Math.sin((p.max-p.life)*8+p.rot)*12*dt;
+    }
+    if(p.y>LH+10||p.x<-12)p.active=false;
+  }
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function shakeOffset(){
+  if(shakeT<0)return[0,0];
+  var s=SHAKE_PAT[Math.floor(shakeT*60)%SHAKE_PAT.length];
+  return[s[0],s[1]];
+}
+function renderBackground(shakeX,shakeY){
+  var bands=[[0,PAL.bg0],[10,PAL.bg1],[22,PAL.bg2],[34,PAL.bg3],
+             [46,PAL.bg4],[58,PAL.bg5],[70,PAL.bg6]];
+  for(var y=0;y<LH;y++){
+    var col=PAL.bg0;
+    for(var b=bands.length-1;b>=0;b--) if(y>=bands[b][0]){col=bands[b][1];break;}
+    g.fillStyle=col; g.fillRect(0,y,LW,1);
+  }
+  for(var bb=1;bb<bands.length;bb++){
+    var by=bands[bb][0];
+    for(var x=0;x<LW;x++){
+      g.fillStyle=DITHER[by%4][x%4]<2?bands[bb-1][1]:bands[bb][1];
+      g.fillRect(x,by-1,1,1);
+    }
+  }
+  /* 月亮 */
+  var mx=122-Math.round(scrollDist*0.015)%40, my=17;
+  if(mx< -20)mx+= (LW+40);
+  drawMoon(mx+shakeX,my+shakeY,9);
+
+  /* 星（稀疏，冷色，轻微闪烁） */
+  var fr=Math.floor(time*6);
+  for(var i=0;i<stars.length;i++){
+    var st=stars[i], tw=(fr+st.ph)%14;
+    if(tw===0)continue;
+    var x2=st.x-Math.floor(scrollDist*0.05);
+    x2=((x2%LW)+LW)%LW;
+    g.fillStyle=tw>11?PAL.starD:PAL.star;
+    g.fillRect(x2,st.y,1,1);
+  }
+
+  /* 教堂尖塔剪影（慢视差，在屋脊后方，循环排列） */
+  var par=scrollDist*0.18, span=150;
+  for(var s=0;s<spires.length;s++){
+    var sp=spires[s];
+    var bx=Math.round(((sp.x-par)%span+span)%span-12)+shakeX;
+    drawSpire(bx,sp);
+  }
+  /* 乌鸦（V 形，缓慢横移） */
+  for(var c=0;c<crows.length;c++){
+    var cr=crows[c];
+    var cx2=cr.x - (scrollDist*cr.sp*0.4 + time*6*cr.sp);
+    cx2=((cx2%(LW+20))+(LW+20))%(LW+20)-10;
+    var flap=Math.floor(time*6+cr.ph)%2;
+    g.fillStyle=PAL.cat;
+    var cyy=cr.y+shakeY;
+    g.fillRect(Math.round(cx2),cyy-flap,1,1);
+    g.fillRect(Math.round(cx2)-1,cyy-1+flap,1,1);
+    g.fillRect(Math.round(cx2)+1,cyy-1+flap,1,1);
+  }
+}
+function drawMoon(cx,cy,r){
+  /* 光晕（稀疏点） */
+  g.fillStyle=PAL.bg4;
+  for(var y=-r-3;y<=r+3;y++)for(var x=-r-3;x<=r+3;x++){
+    var d=Math.sqrt(x*x+y*y);
+    if(d>r&&d<=r+3&&((x*3+y*5)%4===0)) g.fillRect(cx+x,cy+y,1,1);
+  }
+  for(var yy=-r;yy<=r;yy++)for(var xx=-r;xx<=r;xx++){
+    var dd=Math.sqrt(xx*xx+yy*yy);
+    if(dd>r)continue;
+    var col=PAL.moon;
+    if(dd>r-1.3)col=PAL.moonD;
+    else if((xx===2&&yy===-2)||(xx===-3&&yy===2)||(xx===3&&yy===3))col=PAL.moonSh;
+    g.fillStyle=col; g.fillRect(cx+xx,cy+yy,1,1);
+  }
+}
+function drawSpire(bx,sp){
+  var base=68;                       // 与屋脊顶齐
+  var top=base-sp.h;
+  /* 塔身 */
+  g.fillStyle=PAL.cat;
+  g.fillRect(bx,top,sp.w,sp.h);
+  /* 尖顶（三角） */
+  var cx=bx+Math.floor(sp.w/2);
+  for(var i=0;i<7;i++){
+    g.fillRect(cx-i,top-7+i, i*2+1,1);
+  }
+  g.fillRect(cx,top-9,1,2);
+  /* 尖拱彩窗（暗彩光点） */
+  if(sp.win){
+    var wy=top+Math.floor(sp.h*0.4);
+    var cols=[PAL.blood,PAL.glassG,PAL.glassB,PAL.gold];
+    var flick=Math.floor(time*2+sp.x)%4;
+    g.fillStyle=cols[flick];
+    g.fillRect(cx-1,wy,1,3); g.fillRect(cx+1,wy,1,3); g.fillRect(cx,wy-1,1,1);
+    g.fillStyle=PAL.cat2;
+    g.fillRect(cx,wy+1,1,1);
+  }
+}
+
+/* 教堂屋脊（石砖/瓦） */
+function renderRidge(shakeX,shakeY){
+  var floorBase=68+WY;
+  for(var x=0;x<LW;x++){
+    var wx=x+scrollDist;
+    if(gap.active&&x>gap.x1&&x<gap.x2)continue;
+    var top=floorBase+Math.round(Math.sin(wx*0.05)*1.4);
+    var seam=(Math.floor(wx/7)%2===0);
+    for(var i=0;i<14;i++){
+      var col;
+      if(i===0) col=seam?PAL.tileDk:PAL.tileHi;          // 瓦顶
+      else if(i===1) col=PAL.tile;
+      else {
+        var block=Math.floor(wx/7);
+        var moss=(block%5===0 && i===3);
+        if(moss) col=PAL.moss;
+        else if(i%4===3) col=seam?PAL.stoneDk:PAL.stone;
+        else col=seam?PAL.stoneDk:((i+block)%3===0?PAL.stone:PAL.stone);
+      }
+      g.fillStyle=col; g.fillRect(x,top+i,1,1);
+    }
+    /* 顶边冷月光高光 */
+    if(Math.floor(wx)%3!==0){ g.fillStyle=PAL.moonD; g.fillRect(x,top-1,1,1); }
+  }
+  if(gap.active){
+    var fb=68+WY;
+    for(var e=0;e<14;e++){
+      g.fillStyle=e<2?PAL.stoneHi:PAL.gargDk;
+      g.fillRect(Math.round(gap.x1),fb+e,1,1);
+      g.fillRect(Math.round(gap.x2),fb+e,1,1);
+    }
+  }
+}
+
+/* 障碍点阵 */
+function drawFoe(m,shakeX,shakeY){
+  var cx=Math.round(m.x)+shakeX, cy=Math.round(m.y+WY)+shakeY;
+  var r=[2,3,8][m.size];
+  if(m.kind===1){ /* 火焰投石 */
+    /* 外焰 */
+    for(var y=-r-1;y<=r+1;y++)for(var x=-r-1;x<=r+1;x++){
+      var d=Math.sqrt(x*x+y*y);
+      if(d<=r+1&&d>r-0.5&&((x*2+y+m.rot)%3===0)){
+        g.fillStyle=(x+y+m.rot)%2?PAL.fire:PAL.fireHi;
+        g.fillRect(cx+x,cy+y,1,1);
+      }
+    }
+    /* 石核 */
+    for(var yy=-r;yy<=r;yy++)for(var xx=-r;xx<=r;xx++){
+      var dd=Math.sqrt(xx*xx+yy*yy);
+      if(dd>r)continue;
+      if(dd>r-1.2&&((xx*3+yy*5+m.rot)%7)<2)continue;
+      var col=dd>r-1.2?PAL.gargDk:(xx<0&&yy<0?PAL.gargHi:PAL.garg);
+      g.fillStyle=col; g.fillRect(cx+xx,cy+yy,1,1);
+    }
+    g.fillStyle=PAL.fireHi; g.fillRect(cx-1,cy-1,1,1);
+  } else if(m.size===0){
+    drawHangingBeast(cx,shakeX,shakeY);
+  } else { /* 落地巨石像 */
+    for(var y2=-r;y2<=r;y2++)for(var x2=-r;x2<=r;x2++){
+      var d2=Math.sqrt(x2*x2+y2*y2);
+      if(d2>r)continue;
+      if(d2>r-1.2&&((x2*3+y2*5+m.rot)%7)<2)continue;
+      var c2;
+      if(d2>r-1.2)c2=PAL.gargDk;
+      else if(x2<0&&y2<0)c2=PAL.gargHi;
+      else if(x2>0&&y2>0)c2=PAL.gargDk;
+      else c2=PAL.garg;
+      g.fillStyle=c2; g.fillRect(cx+x2,cy+y2,1,1);
+    }
+    /* 角 + 翼缘（放大） */
+    g.fillStyle=PAL.gargDk;
+    g.fillRect(cx-4,cy-r,2,2); g.fillRect(cx+3,cy-r,2,2);
+    g.fillRect(cx-r,cy-1,2,2); g.fillRect(cx+r-1,cy-1,2,2);
+    g.fillRect(cx-r,cy-3,3,1); g.fillRect(cx+r-2,cy-3,3,1);
+    /* 暗红眼 */
+    g.fillStyle=PAL.gargEye;
+    g.fillRect(cx-3,cy-1,2,2); g.fillRect(cx+1,cy-1,2,2);
+    g.fillStyle=PAL.gargDk; g.fillRect(cx-1,cy+3,3,2);
+  }
+}
+/* 低垂滴水嘴兽横梁：石梁自屋顶垂下、底部兽刃，只能滑铲钻过 */
+function drawHangingBeast(cx,shakeX,shakeY){
+  var oy=WY+shakeY;
+  g.fillStyle=PAL.gargDk; g.fillRect(cx-3,2+oy,7,42);
+  g.fillStyle=PAL.garg;   g.fillRect(cx-2,2+oy,3,42);
+  g.fillStyle=PAL.gargHi; g.fillRect(cx-2,2+oy,1,42);
+  g.fillStyle=PAL.gargDk;
+  for(var yy=6;yy<42;yy+=6)g.fillRect(cx-2,yy+oy,3,2);
+  g.fillStyle=PAL.gargDk; g.fillRect(cx-6,44+oy,13,2);
+  g.fillStyle=PAL.garg;   g.fillRect(cx-5,46+oy,11,5);
+  g.fillRect(cx-6,47+oy,2,3); g.fillRect(cx+5,47+oy,2,3);
+  g.fillStyle=PAL.gargHi; g.fillRect(cx-4,46+oy,3,2); g.fillRect(cx+2,46+oy,2,2);
+  g.fillStyle=PAL.gargDk; g.fillRect(cx-4,45+oy,2,2); g.fillRect(cx+3,45+oy,2,2);
+  g.fillStyle=PAL.gargEye; g.fillRect(cx-3,48+oy,2,1); g.fillRect(cx+2,48+oy,2,1);
+  g.fillStyle=PAL.gargDk; g.fillRect(cx-5,51+oy,11,1);
+}
+
+function renderBeam(shakeX,shakeY){
+  if(!beam.active)return;
+  var x0=Math.round(beam.x)+shakeX;
+  var x1=x0+beam.w, oy=WY+shakeY;
+  var blink=beam.t<beam.spawnT;
+  if(blink && Math.floor(time*16)%2===0)return;        /* 出生闪烁预警 */
+  var high=beam.kind==='high';
+  var top=high?18:34, bot=high?52:58;
+  var blade=high?bot:top;                              /* 危险亮刃：高位在底缘、低位在顶缘 */
+  g.globalAlpha=blink?0.5:1;
+  g.fillStyle=beam.edgeD;                             /* 光帘点阵 */
+  for(var yy=top;yy<=bot;yy++)for(var xx=x0;xx<=x1;xx++){
+    if(((xx*3+yy*2+Math.floor(time*8))%4)!==0)g.fillRect(xx,yy+oy,1,1);
+  }
+  g.globalAlpha=blink?0.28:0.42;
+  g.fillStyle=beam.edge; g.fillRect(x0,top+oy,beam.w+1,bot-top+1);
+  g.globalAlpha=blink?0.5:1;
+  g.fillStyle=beam.edgeD;                             /* 两端光柱 */
+  g.fillRect(x0,top+oy-1,1,bot-top+3); g.fillRect(x1,top+oy-1,1,bot-top+3);
+  g.fillStyle=beam.edge; g.fillRect(x0,blade+oy,beam.w+1,2);   /* 危险刃 */
+  if(Math.floor(time*18)%2===0){ g.fillStyle=PAL.core; g.fillRect(x0,blade+(high?1:0)+oy,beam.w+1,1); }
+  g.fillStyle=PAL.core;
+  g.fillRect(x0,blade+oy,1,1); g.fillRect(x1,blade+oy,1,1);
+  g.globalAlpha=1;
+}
+
+function renderParticles(shakeX,shakeY){
+  for(var i=0;i<MAX_P;i++){
+    var p=P[i]; if(!p.active)continue;
+    var t=p.life/p.max;
+    var x=Math.round(p.x)+shakeX, y=Math.round(p.y+WY)+shakeY;
+    if(p.kind===K_SPARK){ g.fillStyle=sparkColor(t); g.fillRect(x,y,p.size,p.size); }
+    else if(p.kind===K_DUST){ g.fillStyle=dustColor(t,p.hue); g.fillRect(x,y,1,1); }
+    else if(p.kind===K_TAIL){ g.fillStyle=tailColor(t); g.fillRect(x,y,p.size,p.size); }
+    else if(p.kind===K_SHARD){ g.fillStyle=shardColor(t,p.hue); g.fillRect(x,y,p.size,p.size); }
+    else if(p.kind===K_FEATHER){
+      g.fillStyle=t>0.5?PAL.featherHi:PAL.feather;
+      g.fillRect(x,y,p.size,1); g.fillRect(x+(p.rot%2),y+1,1,1);
+    }
+    else if(p.kind===K_AFTER){
+      g.globalAlpha=clamp(t+0.1,0.08,1);
+      g.drawImage(afterBuf[p.hue%7],x,y,pose.dw,pose.dh);
+      g.globalAlpha=1;
+    } else {
+      /* 黑羽裙摆绽开：黑紫扩散环 */
+      var spread=Math.round((1-t)*10)+2;
+      g.fillStyle=PAL.featherHi;
+      g.fillRect(x-spread,y-2,spread*2+1,1);
+      g.fillRect(x-spread,y+2,spread*2+1,1);
+      g.fillRect(x-spread,y-2,1,5); g.fillRect(x+spread,y-2,1,5);
+      g.fillStyle=PAL.feather;
+      var s2=Math.max(1,spread-3);
+      g.fillRect(x-s2,y-1,s2*2+1,1);
+      g.fillRect(x-s2,y+1,s2*2+1,1);
+    }
+  }
+}
+
+function renderChar(shakeX,shakeY){
+  if(mode==='DEAD'&&deathCause!=='gap'&&deathT>0.16)return;  /* 非坠落：爆成黑羽后隐去 */
+  var legFrame=pose.air?4:(pose.legHold?1:(Math.floor(scrollDist/5)%4));
+  buildChar(legFrame,pose.eyeFwd);
+  var floorBase=68+WY;
+  var cy=floorBase-pose.dh+pose.cyOff, cx=charScreenX;
+  var dx=Math.round(cx)+shakeX, dy=Math.round(cy)+shakeY;
+  if(pose.lean>0.5){
+    var hh=Math.max(2,Math.round(pose.dh*0.5));
+    g.drawImage(charBuf,0,0,16,13,dx+1,dy,pose.dw,hh);
+    g.drawImage(charBuf,0,13,16,15,dx,dy+hh,pose.dw,pose.dh-hh);
+  } else {
+    g.drawImage(charBuf,dx,dy,pose.dw,pose.dh);
+  }
+  if(nearSide&&nearT>0){
+    g.fillStyle=PAL.moon;
+    if(nearSide==='top'){ g.fillRect(dx,dy,pose.dw,1);
+      g.fillRect(dx,dy+1,1,1); g.fillRect(dx+pose.dw-1,dy+1,1,1); }
+    else if(nearSide==='bottom'){ g.fillRect(dx,dy+pose.dh-1,pose.dw,1); }
+    else { g.fillRect(dx,dy,1,pose.dh);
+      g.fillRect(dx+1,dy,1,1); g.fillRect(dx+1,dy+pose.dh-1,1,1); }
+  }
+}
+
+function renderSpeedLines(shakeX,shakeY){
+  var inten=clamp((worldV-108)/240,0,1);
+  var count=Math.round(inten*(state==='BOOST'?24:10));
+  for(var i=0;i<count;i++){
+    var seed=Math.floor(time*30)+i*31;
+    var rr=(seed*1103515245+12345)&0x7fffffff;
+    var y=rr%LH, len=5+(rr%(state==='BOOST'?36:16));
+    var x=(((rr>>8)%LW)-(scrollDist*2)%LW);
+    x=((x%LW)+LW)%LW;
+    g.fillStyle=(rr%5===0)?PAL.moon:(rr%3===0?PAL.star:PAL.starD);
+    g.fillRect(Math.round(x),y,len,1);
+  }
+}
+
+/* 玫瑰彩窗 WARP：彩窗玻璃色由中心向外铺满，再暗紫收束 */
+var GLASS=[PAL.blood,PAL.fireHi,PAL.glassG,PAL.glassB,PAL.gold,PAL.bloodD,PAL.featherHi];
+function renderWarp(){
+  var t=warpPhase;
+  if(t<0)return;
+  if(t<0.12){
+    g.fillStyle=PAL.core; g.globalAlpha=t/0.12;
+    g.fillRect(0,0,LW,LH); g.globalAlpha=1;
+  } else {
+    var k=(t-0.12)/0.78;
+    g.fillStyle=PAL.black; g.fillRect(0,0,LW,LH);
+    /* 铅框（黑）+ 彩色玻璃，由中心水平向上下展开 */
+    for(var y=0;y<LH;y++){
+      var d=Math.abs(y-LH/2)/(LH/2), start=d*0.42;
+      var bk=clamp((k-start)*3.2,0,1);
+      if(bk<=0)continue;
+      var lead=(y%3===0);
+      g.fillStyle=lead?PAL.black:(bk>0.55?GLASS[y%7]:PAL.gargDk);
+      g.fillRect(0,y,LW,1);
+    }
+    /* 中心暖白残留 */
+    if(k<0.22){
+      g.fillStyle=PAL.core; g.globalAlpha=1-k/0.22;
+      g.fillRect(0,Math.round(LH/2)-2,LW,4); g.globalAlpha=1;
+    }
+    /* 暗紫收束，衔接回 RUN */
+    if(k>0.82){
+      g.fillStyle=PAL.bg0; g.globalAlpha=(k-0.82)/0.18*0.96;
+      g.fillRect(0,0,LW,LH); g.globalAlpha=1;
+    }
+  }
+}
+
+function render(){
+  var sh=shakeOffset();
+  var drop=(state==='BOOST'||state==='WARP')?3:0;
+  WY=-Math.round(camLift)+drop;
+  g.fillStyle=PAL.black; g.fillRect(0,0,LW,LH);
+  renderBackground(sh[0],sh[1]);
+  renderRidge(sh[0],sh[1]);
+  renderParticles(sh[0],sh[1]);
+  renderBeam(sh[0],sh[1]);
+  for(var i=0;i<MAX_F;i++) if(foes[i].active)drawFoe(foes[i],sh[0],sh[1]);
+  renderChar(sh[0],sh[1]);
+  renderSpeedLines(sh[0],sh[1]);
+  if(warpPhase>=0)renderWarp();
+  if(mode==='DEAD'&&deathFlash>0){
+    var df=clamp(deathFlash/0.5,0,1);
+    g.globalAlpha=df*0.5; g.fillStyle=PAL.blood; g.fillRect(0,0,LW,LH);
+    g.globalAlpha=df*0.4; g.fillStyle=PAL.black;
+    g.fillRect(0,0,LW,7); g.fillRect(0,LH-7,LW,7); g.globalAlpha=1;
+  }
+
+  sx.fillStyle=PAL.black; sx.fillRect(0,0,screen.width,screen.height);
+  var dw=LW*scale, dh=LH*scale;
+  sx.imageSmoothingEnabled=false;
+  sx.drawImage(logic,Math.floor((screen.width-dw)/2),
+               Math.floor((screen.height-dh)/2),dw,dh);
+}
+
+/* ---------- 主循环：60Hz 固定步长 + rAF ---------- */
+var last=performance.now(), acc=0;
+function frame(now){
+  var dt=(now-last)/1000; last=now;
+  if(dt>0.12)dt=0.12;
+  if(hitstop>0){ hitstop--; }
+  else {
+    acc+=dt*(slowmo>0?0.35:1);
+    var guard=0;
+    while(acc>=STEP&&guard<6){ update(STEP); acc-=STEP; guard++; }
+  }
+  render();
+  GameAudio.update();
+  requestAnimationFrame(frame);
+}
+/* ============================================================
+   音频引擎：Web Audio 程序化哥特中世纪配乐（自适应）+ 音效
+   管风琴 / 唱诗 pad / 教堂钟 / 低频持续音，随游戏情绪变奏
+   ============================================================ */
+var GameAudio=(function(){
+  var ctx=null,master=null,send=null,started=false;
+  var step=0,nextT=0;
+  function mf(n){ return 440*Math.pow(2,(n-69)/12); }
+  var CHORDS=[[50,53,57],[46,50,53],[43,46,50],[45,49,52]];   // Dm - Bb - Gm - A
+  var SCALE=[62,64,65,67,69,70,72,74];                        // D Dorian
+  var MEL=[0,2,4,3,5,4,2,1,4,6,7,6,4,2,1,0];
+  function impulse(sec,decay){
+    var rate=ctx.sampleRate,len=Math.floor(rate*sec),b=ctx.createBuffer(2,len,rate);
+    for(var c=0;c<2;c++){ var d=b.getChannelData(c);
+      for(var i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,decay); }
+    return b;
+  }
+  function init(){
+    var AC=window.AudioContext||window.webkitAudioContext; ctx=new AC();
+    master=ctx.createGain(); master.gain.value=0; master.connect(ctx.destination);
+    var conv=ctx.createConvolver(); conv.buffer=impulse(2.8,2.4);
+    var rgain=ctx.createGain(); rgain.gain.value=0.55;
+    send=ctx.createGain();
+    send.connect(conv); conv.connect(rgain); rgain.connect(master);
+  }
+  function tone(midi,when,dur,type,vol,o){
+    o=o||{};
+    var osc=ctx.createOscillator(),g=ctx.createGain(),fl=ctx.createBiquadFilter();
+    osc.type=type; osc.frequency.value=mf(midi);
+    if(o.detune)osc.detune.value=o.detune;
+    fl.type='lowpass'; fl.frequency.value=o.cut||1600;
+    var at=o.attack||0.05;
+    g.gain.setValueAtTime(0.0001,when);
+    g.gain.exponentialRampToValueAtTime(Math.max(vol,0.0002),when+at);
+    g.gain.setValueAtTime(vol,when+Math.max(at,dur*0.6));
+    g.gain.exponentialRampToValueAtTime(0.0008,when+dur);
+    osc.connect(fl); fl.connect(g); g.connect(master);
+    if(o.verb!==false)g.connect(send);
+    osc.start(when); osc.stop(when+dur+0.05);
+    if(o.lfo){ var l=ctx.createOscillator(),lg=ctx.createGain();
+      l.frequency.value=4.2+Math.random()*1.2; lg.gain.value=o.lfo;
+      l.connect(lg); lg.connect(osc.frequency); l.start(when); l.stop(when+dur); }
+  }
+  function bell(midi,when,vol){
+    [[1,1],[2.01,0.5],[2.4,0.32],[3.01,0.2],[4.8,0.1]].forEach(function(p){
+      var o=ctx.createOscillator(),g=ctx.createGain(),dur=3.4;
+      o.type='sine'; o.frequency.value=mf(midi)*p[0];
+      g.gain.setValueAtTime(vol*p[1],when);
+      g.gain.exponentialRampToValueAtTime(0.0005,when+dur);
+      o.connect(g); g.connect(master); g.connect(send);
+      o.start(when); o.stop(when+dur);
+    });
+  }
+  function nz(when,dur,type,f0,f1,q,vol){
+    var n=Math.floor(ctx.sampleRate*dur),b=ctx.createBuffer(1,n,ctx.sampleRate),d=b.getChannelData(0);
+    for(var i=0;i<n;i++)d[i]=Math.random()*2-1;
+    var s=ctx.createBufferSource(); s.buffer=b;
+    var fl=ctx.createBiquadFilter(); fl.type=type; fl.Q.value=q||1;
+    fl.frequency.setValueAtTime(f0,when);
+    if(f1)fl.frequency.exponentialRampToValueAtTime(Math.max(f1,20),when+dur);
+    var g=ctx.createGain();
+    g.gain.setValueAtTime(vol,when);
+    g.gain.exponentialRampToValueAtTime(0.001,when+dur);
+    s.connect(fl); fl.connect(g); g.connect(master); g.connect(send);
+    s.start(when);
+  }
+  function sweep(a,b,dur,vol,cut){
+    var t=ctx.currentTime,o=ctx.createOscillator(),g=ctx.createGain(),fl=ctx.createBiquadFilter();
+    o.type='sawtooth'; o.frequency.setValueAtTime(a,t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(b,20),t+dur);
+    fl.type='lowpass'; fl.frequency.value=cut||1200;
+    g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(fl); fl.connect(g); g.connect(master); g.connect(send);
+    o.start(t); o.stop(t+dur);
+  }
+  /* 剧情段落：按奔逃距离分 0 宁静 / 1 渐紧 / 2 紧张 */
+  function phaseOf(){ var m=totalM(); return m<150?0:(m<400?1:2); }
+  function interval(){
+    if(state==='DEAD')return 0.9;
+    if(state==='BOOST')return 0.17;
+    if(state==='WARP')return 0.13;
+    if(state==='DODGE')return 0.26;
+    if(state==='WARN')return 0.36;
+    var ph=phaseOf();
+    return ph>=2?0.39:(ph===1?0.43:0.48);
+  }
+  /* 音阶外的幽灵音：小二度 / 三全音，远处飘来的不安 */
+  var GHOST=[61,66,68,73,71,60,78];
+  function schedule(s,t){
+    var stp=s%16, bar=Math.floor(s/16)%4, iv=interval(), mood=state, ph=phaseOf();
+    var climax=(mood==='BOOST'||mood==='WARP');
+    if(stp===0){
+      var barLen=iv*16+0.6;
+      var dark=(ph===2&&(bar%2===0));                                   // 紧张段落：低音沉半音
+      tone(dark?37:38,t,barLen,'sine',0.12,{cut:380,attack:0.7,verb:false});   // D 持续低音
+      tone(45,t,barLen,'triangle',0.05,{cut:600,attack:0.8});           // A 五度
+      CHORDS[bar].forEach(function(m){                                  // 管风琴和弦
+        tone(m,t,barLen,'sawtooth',0.04,{cut:850,attack:0.6,lfo:4});
+        tone(m+12,t,barLen,'sawtooth',0.018,{cut:1500,attack:0.7,detune:6,lfo:5});
+      });
+      if(dark) tone(CHORDS[bar][0]+6,t,barLen,'sawtooth',0.014,{cut:680,attack:1.1,lfo:3}); // 三全音阴影
+      nz(t,barLen,'lowpass',170,80,0.5,0.010+ph*0.005);                 // 幽暗气流 / 管风琴风箱
+      tone(44,t,barLen,'sine',0.008+ph*0.007,{cut:420,attack:1.6,lfo:3}); // 与 A 差半音的极弱摩擦
+      bell(bar===3?69:74,t,0.09);                                       // 每小节教堂钟
+      if(((((s/16)|0)*53)%7)===0) nz(t,0.9,'bandpass',460,940,3.5,0.013+ph*0.004); // 远处低语
+    }
+    var melEvery=(mood==='BOOST')?2:(mood==='WARP')?1:(ph>=2?2:(ph===1?3:4));
+    if(stp%melEvery===0){                                               // 唱诗旋律（越远越密）
+      var idx=(mood==='WARP')?Math.min(7,Math.floor(s)%8):MEL[(s*3+bar*2+16)%16];
+      tone(SCALE[idx],t,iv*melEvery*0.98,'sawtooth',
+           climax?0.045:(ph===2?0.04:0.032),
+           {cut:mood==='WARP'?3400:(ph===2?2000:1500),attack:0.14,lfo:6});
+    }
+    /* 幽灵音：稀疏、音阶外的远处钟磬，越往后越密（极轻） */
+    if((s%4===3)&&(((s*2654435761)>>>0)%100)<(3+ph*3)){
+      var gm=GHOST[(s*7)%GHOST.length];
+      bell(gm,t,0.045);
+      tone(gm,t,1.4,'sine',0.016,{cut:2400,attack:0.5,detune:7,lfo:6});
+    }
+    /* 150m 后逼近的脚步 / 心跳低音脉冲 */
+    if(ph>=1&&!climax&&mood!=='WARN'){
+      var pulse=ph>=2?2:4;
+      if(stp%pulse===0) tone(36,t,0.16,'sine',ph>=2?0.10:0.06,{cut:260,attack:0.008,verb:false});
+    }
+    if(mood==='BOOST'&&stp%2===0){                                      // 加速驱动音型
+      tone(38,t,0.15,'square',0.085,{cut:520,attack:0.006,verb:false});
+      if(stp%4===2)nz(t,0.09,'lowpass',1300,280,1,0.05);
+    }
+    if(mood==='WARN'&&stp===0){
+      tone(73,t,iv*4,'sine',0.035,{cut:4200,attack:0.02,lfo:9});
+      tone(72,t,0.5,'sine',0.025,{cut:3000,detune:-12,lfo:10});        // 预警时下行的诡异高音
+    }
+  }
+  return {
+    start:function(){
+      if(started)return; started=true;
+      if(!ctx)init();
+      if(ctx.state==='suspended')ctx.resume();
+      master.gain.cancelScheduledValues(ctx.currentTime);
+      master.gain.linearRampToValueAtTime(0.5,ctx.currentTime+1.6);
+      nextT=ctx.currentTime+0.15; step=0;
+    },
+    update:function(){
+      if(!started||!ctx)return;
+      if(state==='DEAD')return;
+      var now=ctx.currentTime,guard=0;
+      while(nextT<now+0.25&&guard<24){ schedule(step,nextT); nextT+=interval(); step++; guard++; }
+    },
+    sfx:function(name,p){
+      if(!started||!ctx)return; var t=ctx.currentTime;
+      if(name==='near'){ nz(t,0.26,'bandpass',620,2600,1.4,0.10);
+                        tone(76,t,0.2,'sawtooth',0.035,{cut:3200,attack:0.005}); }
+      else if(name==='boom'){
+        tone(35,t,0.6,'sine',0.45,{cut:320,attack:0.002});
+        sweep(150,40,0.5,0.35,900);
+        nz(t,0.45,'lowpass',2400,120,0.7,0.28);
+        if(p>=2){ nz(t,0.7,'highpass',1700,500,1,0.16); bell(62,t,0.12); }
+      }
+      else if(name==='flutter'){ [62,65,69].forEach(function(m,i){
+                        tone(m,t+i*0.055,0.32,'triangle',0.06,{cut:2400,attack:0.01}); }); }
+      else if(name==='jump'){ tone(69,t,0.18,'triangle',0.07,{cut:2200,attack:0.01}); }
+      else if(name==='slide'){ nz(t,0.4,'lowpass',760,300,1.6,0.07); }
+      else if(name==='dash'){ nz(t,0.3,'bandpass',520,2400,1,0.09); }
+      else if(name==='glass'){
+        nz(t,0.5,'highpass',3200,5200,0.8,0.18);
+        for(var i=0;i<6;i++) bell(72+i*2,t+i*0.06,0.07);
+        sweep(420,1700,0.6,0.1,2600);
+      }
+      else if(name==='warn'){
+        tone(73,t,0.5,'sine',0.05,{cut:4200,attack:0.01,lfo:9});
+        nz(t,0.3,'bandpass',1800,900,2,0.04);
+      }
+      else if(name==='death'){
+        tone(40,t,0.9,'sine',0.4,{cut:300,attack:0.002});
+        sweep(300,46,0.9,0.3,700);
+        nz(t,0.7,'lowpass',1800,90,0.8,0.3);
+        /* 下行半音 cluster，安魂曲般扭曲消散 */
+        tone(50,t,1.8,'sine',0.18,{cut:600,attack:0.02});
+        tone(49,t+0.14,2.0,'sine',0.15,{cut:520,attack:0.03});
+        tone(47,t+0.30,2.3,'sine',0.12,{cut:460,attack:0.04});
+        tone(76,t+0.12,2.6,'sine',0.05,{cut:3200,attack:0.3,detune:-28,lfo:8}); // 走调灵魂高音
+        bell(57,t,0.14); bell(53,t+0.35,0.10);
+        nz(t,1.4,'bandpass',600,180,2,0.06);
+      }
+    }
+  };
+})();
+
+buildChar(1,false);
+/* ===== 开场门 / 键盘 + 触屏输入 / 死亡重开 ===== */
+var gateEl=document.getElementById('gate');
+function startFromGate(){
+  if(mode!=='READY')return;
+  GameAudio.start();
+  gateEl.classList.add('hide');
+  setTimeout(function(){ gateEl.style.display='none'; },1300);
+  resetGame();
+}
+window.addEventListener('keydown',function(e){
+  var k=e.code;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].indexOf(k)>=0)e.preventDefault();
+  if(mode==='READY'){ startFromGate(); return; }
+  if(mode==='PLAY'){
+    if(k==='ArrowUp'||k==='Space'||k==='KeyW'){ if(!e.repeat)tryJump(); }
+    else if(k==='ArrowDown'||k==='KeyS'){ if(!e.repeat)pressDown(); }
+    else if(k==='ShiftLeft'||k==='ShiftRight'||k==='KeyD'||k==='ArrowRight'){ if(!e.repeat)tryDash(); }
+  } else if(mode==='DEAD'){
+    if(k==='KeyR'||k==='Space'||k==='Enter')resetGame();
+  }
+});
+/* 触屏：canvas 上半屏跳、下半屏滑铲 */
+screen.addEventListener('pointerdown',function(e){
+  if(mode!=='PLAY')return;
+  if(e.clientY/window.innerHeight<0.62)tryJump(); else pressDown();
+},{passive:true});
+/* 右下冲刺按钮（触屏） */
+document.getElementById('btnDash').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); e.preventDefault(); tryDash();
+});
+/* 开场门点击开始；死亡面板点击重开 */
+gateEl.addEventListener('pointerdown',function(){ startFromGate(); });
+document.getElementById('over').addEventListener('pointerdown',function(e){
+  e.stopPropagation(); if(mode==='DEAD')resetGame();
+});
+updateHUD();
+requestAnimationFrame(frame);
+</script>
+<script>
+/* 仅在 https / localhost 下注册离线缓存；file:// 直接打开时静默跳过 */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  });
+}
+</script>
+</body>
+</html>
